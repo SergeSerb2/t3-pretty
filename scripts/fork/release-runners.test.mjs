@@ -1,4 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -311,10 +312,6 @@ ${setup}
       pipeline.indexOf(":windows: Windows NSIS"),
       pipeline.indexOf(":linux: Linux x64 AppImage"),
     );
-    const mirrorStep = pipeline.slice(
-      pipeline.indexOf(":github: Mirror Origin main and release tags"),
-      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
-    );
     const androidStep = pipeline.slice(
       pipeline.indexOf(":android: Android Internal"),
       pipeline.indexOf(":android: Android public closed test"),
@@ -344,9 +341,6 @@ ${setup}
     assert.include(pipeline, "macos-release + os=macos in pipeline settings");
     assert.notInclude(pipeline, "windows-release in pipeline settings");
     assert.include(windowsStep, "queue: windows-release");
-    assert.include(mirrorStep, "queue: macos-release");
-    assert.include(mirrorStep, "os: macos");
-    assert.notInclude(mirrorStep, "queue: macos-medium");
     assert.include(androidStep, "queue: macos-medium");
     assert.include(relayStep, "queue: macos-release");
     assert.include(relayStep, "os: macos");
@@ -800,7 +794,7 @@ ${setup}
     assert.include(publicWeb, 'VITE_CONNECT_CLI_AUTH_ENABLED: "0"');
     assert.notInclude(publicCli, "VITE_HOSTED_APP_URL");
     assert.include(publicReleaseWorkflow, '[[ "$REF" == "refs/heads/main" ]]');
-    assert.include(publicReleaseWorkflow, "name: wsl-node-pty-x64");
+    assert.include(publicReleaseWorkflow, "name: wsl-runtime-linux-x64");
     assert.include(publicReleaseWorkflow, "pattern: public-*");
     assert.include(publicReleaseWorkflow, "cp scripts/fork/install-cli.sh public-cli/install.sh");
     assert.notInclude(publicReleaseWorkflow, "sed -i");
@@ -845,6 +839,65 @@ ${setup}
       // Imported Origin jobs still see the GitHub-mirror repository name.
       // These workflows are fork-only (`==`), not an upstream skip (`!=`).
       assert.include(workflow, "github.repository == 'SergeSerb2/t3-pretty'");
+    }
+  });
+
+  it("requires the exact verified WSL archive before Windows packaging", () => {
+    const desktop = jobBlock(publicReleaseWorkflow, "desktop");
+    const buildStep = desktop.slice(
+      desktop.indexOf("      - name: Build unsigned public artifact\n"),
+      desktop.indexOf("      - name: Collect desktop files\n"),
+    );
+    const script = buildStep
+      .slice(buildStep.indexOf("        run: |\n") + "        run: |\n".length)
+      .replace(/^          /gmu, "")
+      .replaceAll("${{ matrix.platform }}", "win")
+      .replaceAll("${{ matrix.target }}", "nsis")
+      .replaceAll("${{ matrix.arch }}", "x64")
+      .replaceAll("${{ needs.preflight.outputs.version }}", "0.1.0");
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "public-wsl-runtime-"));
+    const runtimeDir = NodePath.join(root, "wsl-runtime");
+    const archive = NodePath.join(runtimeDir, "t3-0.1.0-linux-x64.tar.gz");
+    const capture = NodePath.join(root, "packager-args");
+    const run = () =>
+      NodeChildProcess.spawnSync(
+        "/bin/bash",
+        ["-c", `vp() { printf '%s\\n' "$@" > "$PACKAGER_ARGS"; }\n${script}`],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            GITHUB_WORKSPACE: root,
+            PUBLIC_RELEASE_VERSION: "0.1.0",
+            PACKAGER_ARGS: capture,
+          },
+        },
+      );
+    try {
+      NodeFS.mkdirSync(runtimeDir);
+      assert.notEqual(run().status, 0, "missing runtime must stop before packaging");
+      assert.isFalse(NodeFS.existsSync(capture));
+
+      const bytes = Buffer.from("verified Linux runtime fixture");
+      NodeFS.writeFileSync(archive, bytes);
+      NodeFS.writeFileSync(
+        `${archive}.sha256`,
+        `${NodeCrypto.createHash("sha256").update(bytes).digest("hex")}  ${NodePath.basename(archive)}\n`,
+      );
+      const verified = run();
+      assert.equal(verified.status, 0, verified.stderr);
+      const args = NodeFS.readFileSync(capture, "utf8").trim().split("\n");
+      assert.includeMembers(args, ["--wsl-runtime", archive, "--build-version", "0.1.0"]);
+      assert.notInclude(args, "--wsl-prebuild");
+      assert.notInclude(args, "--signed");
+
+      NodeFS.unlinkSync(capture);
+      NodeFS.appendFileSync(archive, "tampered bytes");
+      assert.notEqual(run().status, 0, "a stale hash must stop before packaging");
+      assert.isFalse(NodeFS.existsSync(capture));
+    } finally {
+      NodeFS.rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -234,6 +234,10 @@ interface CreateManagerOptions {
     never
   >;
   subprocessPollIntervalMs?: number;
+  subprocessIdlePollIntervalMs?: number;
+  registerTerminalProcesses?: Parameters<
+    typeof TerminalManager.makeWithOptions
+  >[0]["registerTerminalProcesses"];
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
   historyByteLimit?: number;
@@ -283,6 +287,12 @@ const createManager = (
         ...(options.processTable !== undefined ? { processTable: options.processTable } : {}),
         ...(options.subprocessPollIntervalMs !== undefined
           ? { subprocessPollIntervalMs: options.subprocessPollIntervalMs }
+          : {}),
+        ...(options.subprocessIdlePollIntervalMs !== undefined
+          ? { subprocessIdlePollIntervalMs: options.subprocessIdlePollIntervalMs }
+          : {}),
+        ...(options.registerTerminalProcesses !== undefined
+          ? { registerTerminalProcesses: options.registerTerminalProcesses }
           : {}),
         processKillGraceMs: options.processKillGraceMs ?? 1,
         ...(options.maxRetainedInactiveSessions !== undefined
@@ -1103,6 +1113,7 @@ it.layer(
     Effect.gen(function* () {
       let checks = 0;
       const { manager } = yield* createManager(5, {
+        processKillGraceMs: 0,
         subprocessInspector: () => {
           checks += 1;
           return Effect.succeed({
@@ -1114,15 +1125,128 @@ it.layer(
         subprocessPollIntervalMs: 20,
       });
 
-      yield* Effect.sleep("80 millis");
+      yield* TestClock.adjust("80 millis");
       assert.equal(checks, 0);
 
       yield* manager.open(openInput());
-      yield* waitFor(
-        Effect.sync(() => checks > 0),
-        "1200 millis",
-      );
-    }),
+      yield* TestClock.adjust("20 millis");
+      assert.equal(checks, 1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("backs off quiet shells after 30 seconds using the configured idle interval", () =>
+    Effect.gen(function* () {
+      let checks = 0;
+      const { manager } = yield* createManager(5, {
+        processKillGraceMs: 0,
+        subprocessPollIntervalMs: 500,
+        subprocessIdlePollIntervalMs: 5_000,
+        processTable: Effect.sync(() => {
+          checks += 1;
+          return [];
+        }),
+      });
+      yield* manager.open(openInput());
+      yield* TestClock.adjust("30 seconds");
+      expect(checks).toBe(60);
+
+      yield* TestClock.adjust("4999 millis");
+      expect(checks).toBe(60);
+      yield* TestClock.adjust("1 millis");
+      expect(checks).toBe(61);
+
+      yield* TestClock.adjust("1 second");
+      yield* manager.open(openInput({ terminalId: "second" }));
+      yield* TestClock.adjust(0);
+      expect(checks).toBe(62);
+      yield* TestClock.adjust("500 millis");
+      expect(checks).toBe(63);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect.each(["input", "output"] as const)(
+    "wakes idle subprocess polling on PTY %s without polling per chunk",
+    (activity) =>
+      Effect.gen(function* () {
+        const checks = yield* Queue.unbounded<number>();
+        const { manager, ptyAdapter } = yield* createManager(5, {
+          processKillGraceMs: 0,
+          processTable: Clock.currentTimeMillis.pipe(
+            Effect.tap((now) => Queue.offer(checks, now)),
+            Effect.as([]),
+          ),
+        });
+        yield* manager.open(openInput());
+        yield* TestClock.adjust("30 seconds");
+        expect(yield* Queue.takeAll(checks)).toHaveLength(30);
+        yield* TestClock.adjust("1 second");
+        expect(yield* Queue.size(checks)).toBe(0);
+
+        const sendActivity =
+          activity === "input"
+            ? manager.write({
+                threadId: "thread-1",
+                terminalId: DEFAULT_TERMINAL_ID,
+                data: "a",
+              })
+            : Effect.sync(() => ptyAdapter.processes[0]!.emitData("a"));
+        yield* sendActivity;
+        expect(yield* Queue.take(checks)).toBe(31_000);
+        yield* sendActivity;
+        yield* sendActivity;
+        yield* TestClock.adjust("999 millis");
+        expect(yield* Queue.size(checks)).toBe(0);
+        yield* TestClock.adjust("1 millis");
+        expect(yield* Queue.take(checks)).toBe(32_000);
+
+        yield* TestClock.adjust("29 seconds");
+        expect(yield* Queue.takeAll(checks)).toHaveLength(29);
+        yield* TestClock.adjust("9999 millis");
+        expect(yield* Queue.size(checks)).toBe(0);
+        yield* TestClock.adjust("1 millis");
+        expect(yield* Queue.take(checks)).toBe(71_000);
+      }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect(
+    "polls silent subprocesses promptly and clears their indicators and port registrations",
+    () =>
+      Effect.gen(function* () {
+        let checks = 0;
+        let running = true;
+        const registrations = new Map<string, ReadonlyArray<number>>();
+        const { manager, getEvents } = yield* createManager(5, {
+          processKillGraceMs: 0,
+          processTable: Effect.sync(() => {
+            checks += 1;
+            return running ? [{ pid: 100, ppid: 9001, name: "node" }] : [];
+          }),
+          registerTerminalProcesses: (input) =>
+            Effect.sync(() => {
+              registrations.set(input.terminalId, input.processIds);
+            }),
+        });
+        yield* manager.open(openInput());
+        yield* manager.open(openInput({ terminalId: "second" }));
+        yield* TestClock.adjust("35 seconds");
+        expect(checks).toBe(35);
+        expect(registrations.get(DEFAULT_TERMINAL_ID)).toEqual([]);
+        expect(registrations.get("second")).toEqual([9001, 100]);
+
+        running = false;
+        yield* TestClock.adjust("1 second");
+        expect(checks).toBe(36);
+        expect(registrations.get("second")).toEqual([]);
+        expect((yield* getEvents).filter((event) => event.type === "activity")).toMatchObject([
+          { terminalId: "second", hasRunningSubprocess: true, label: "node" },
+          { terminalId: "second", hasRunningSubprocess: false, label: "second" },
+        ]);
+
+        yield* TestClock.adjust("9999 millis");
+        expect(checks).toBe(36);
+        yield* TestClock.adjust("1 millis");
+        expect(checks).toBe(37);
+      }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("derives subprocess activity for every terminal from one shared process snapshot", () =>

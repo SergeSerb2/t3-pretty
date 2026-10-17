@@ -22,6 +22,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { deepMerge } from "./Struct.ts";
+import { reconcileSidebarProjectLayoutPatch } from "./sidebarProjectLayout.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection, readCustomModelEntries } from "./model.ts";
 import {
@@ -402,7 +403,10 @@ export function applyServerSettingsPatch(
   current: ServerSettings,
   rawPatch: ServerSettingsPatch,
 ): ServerSettings {
-  const patch = translateLegacyProjectOverridePatch(current, rawPatch);
+  const patch = translateLegacyProjectOverridePatch(
+    current,
+    reconcileSidebarProjectLayoutPatch(current, rawPatch),
+  );
   const selectionPatch = patch.textGenerationModelSelection;
   const {
     migrateModelPreferences,
@@ -428,6 +432,7 @@ export function applyServerSettingsPatch(
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
     // Whole-value replacement: deepMerge would keep unassigned projects.
+    sidebarProjectLayout: sidebarProjectLayoutPatch,
     sidebarProjectFolders: sidebarProjectFoldersPatch,
     sidebarProjectFolderAssignments: sidebarProjectFolderAssignmentsPatch,
     ...patchForMerge
@@ -604,6 +609,9 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.defaultProjectScripts !== undefined
       ? { defaultProjectScripts: patch.defaultProjectScripts }
+      : {}),
+    ...(sidebarProjectLayoutPatch !== undefined
+      ? { sidebarProjectLayout: sidebarProjectLayoutPatch }
       : {}),
     ...(sidebarProjectFoldersPatch !== undefined
       ? { sidebarProjectFolders: sidebarProjectFoldersPatch }

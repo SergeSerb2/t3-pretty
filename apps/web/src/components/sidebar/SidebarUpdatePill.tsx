@@ -33,7 +33,7 @@ import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Separator } from "../ui/separator";
-import { SidebarMenuItem } from "../ui/sidebar";
+import { SidebarMenuItem, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   DesktopUpdateStatusIcon,
@@ -270,11 +270,21 @@ async function installLocalUpdate(
  * click updates everything: providers, then servers, then this app last. On
  * web there is no local app, so the button shows only for remote updates.
  */
-export function SidebarUpdatePill() {
-  return <SidebarUpdateControl />;
+export function SidebarUpdatePill({
+  orientation = "horizontal",
+}: {
+  readonly orientation?: "horizontal" | "vertical";
+}) {
+  return <SidebarUpdateControl orientation={orientation} />;
 }
 
-function SidebarUpdateControl() {
+function SidebarUpdateControl({
+  orientation,
+}: {
+  readonly orientation: "horizontal" | "vertical";
+}) {
+  const { state: sidebarState, isMobile } = useSidebar();
+  const vertical = orientation === "vertical" || (sidebarState === "collapsed" && !isMobile);
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
@@ -525,8 +535,9 @@ function SidebarUpdateControl() {
           ? { status: "downloading", percent: state.downloadPercent }
           : { status: "waiting" };
     return (
-      <SidebarMenuItem className="ml-auto flex min-w-0 flex-1">
+      <SidebarMenuItem className={vertical ? "shrink-0" : "ml-auto flex min-w-0 flex-1"}>
         <SidebarUpdateCapsule
+          vertical={vertical}
           run={run}
           local={local}
           icon={statusIcon}
@@ -637,7 +648,7 @@ function SidebarUpdateControl() {
           {!showReleaseNotesPopover ? (
             <TooltipPopup
               align="center"
-              side="top"
+              side={vertical ? "right" : "top"}
               variant={showUpdateDetails ? "glass" : "default"}
             >
               <span className="whitespace-pre-line">{tooltip}</span>
@@ -658,7 +669,7 @@ function SidebarUpdateControl() {
               }
             }}
             ref={releaseNotesPopupRef}
-            side="top"
+            side={vertical ? "right" : "top"}
             style={{
               background:
                 "color-mix(in srgb, var(--update) 18%, color-mix(in srgb, var(--popover) var(--glass-opacity), transparent))",

@@ -545,6 +545,11 @@ const RECORDING_JPEG_QUALITY = 80;
 const RECORDING_MAX_DIMENSION = 1600;
 /** A guest whose screencast produced a frame this recently is healthy; the capturePage fallback only runs once it has gone quiet. */
 const SCREENCAST_GRACE_MS = RECORDING_FRAME_INTERVAL_MS * 3;
+/**
+ * Slowest capturePage fallback tick once a quiet guest keeps producing identical
+ * frames. A hidden guest's next change (an HMR update) shows within this bound.
+ */
+const FALLBACK_CAPTURE_MAX_INTERVAL_MS = 500;
 const PICTURE_IN_PICTURE_FRAME_INTERVAL_MS = RECORDING_FRAME_INTERVAL_MS;
 const PICTURE_IN_PICTURE_JPEG_QUALITY = RECORDING_JPEG_QUALITY;
 /**
@@ -1866,29 +1871,39 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           ) {
             if (method === "Page.screencastFrame") {
               const sessionId = params["sessionId"];
-              if (typeof sessionId === "number") {
-                yield* attemptPromise(
-                  {
-                    operation: "ackScreencastFrame",
-                    webContentsId: wc.id,
-                  },
-                  () => wcDebugger.sendCommand("Page.screencastFrameAck", { sessionId }),
-                ).pipe(Effect.ignore);
-              }
+              const ack =
+                typeof sessionId === "number"
+                  ? attemptPromise(
+                      {
+                        operation: "ackScreencastFrame",
+                        webContentsId: wc.id,
+                      },
+                      () => wcDebugger.sendCommand("Page.screencastFrameAck", { sessionId }),
+                    ).pipe(Effect.ignore)
+                  : Effect.void;
               const tabId = yield* tabIdForWebContents(wc.id);
-              if (!tabId || typeof params["data"] !== "string") return;
-              const captureSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(
-                tabId,
-              );
-              if (!captureSession) return;
-              const now = yield* currentMillis;
-              captureSession.screencast.lastFrameAt = now;
-              // Chromium pushes screencast frames at compositor rate; the
-              // recorder/PiP contract is ~12 fps, so drop (but still ack)
-              // frames that land inside the interval.
-              if (now - captureSession.screencast.lastDeliveredAt < RECORDING_FRAME_INTERVAL_MS) {
+              const captureSession = tabId
+                ? (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId)
+                : undefined;
+              if (!tabId || !captureSession || typeof params["data"] !== "string") {
+                yield* ack;
                 return;
               }
+              const now = yield* currentMillis;
+              captureSession.screencast.lastFrameAt = now;
+              // Chromium pushes screencast frames at compositor rate (60-120 Hz)
+              // and sends the next one only after an ack. The recorder/PiP
+              // contract is ~12 fps, so drop frames that land inside the
+              // interval and hold their ack until it ends: each frame is a
+              // base64 JPEG the main process has to parse.
+              const waitMs =
+                captureSession.screencast.lastDeliveredAt + RECORDING_FRAME_INTERVAL_MS - now;
+              if (waitMs > 0) {
+                yield* Effect.sleep(waitMs);
+                yield* ack;
+                return;
+              }
+              yield* ack;
               captureSession.screencast.lastDeliveredAt = now;
               const metadata =
                 typeof params["metadata"] === "object" && params["metadata"] !== null
@@ -3879,6 +3894,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
     const frameSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
     if (frameSession?.scope !== captureSession.scope) return;
+    if (frameSession.lastPictureInPictureFrame?.equals(encoded) === true) return "unchanged";
     yield* deliverPreviewFrame(tabId, wc, frameSession, {
       tabId,
       data: encoded,
@@ -3892,15 +3908,27 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     consumer: FrameCaptureConsumer,
   ) {
-    const captureNextFrame = Effect.sleep(RECORDING_FRAME_INTERVAL_MS).pipe(
-      Effect.andThen(capturePreviewFrame(tabId)),
-      Effect.catch((error) =>
-        Effect.logWarning("Background preview frame capture failed.", {
-          tabId,
-          error,
-        }),
-      ),
-    );
+    // A static page in a quiet guest yields identical fallback frames. Back off
+    // so an idle picture-in-picture stops capturing and JPEG-encoding on the
+    // main thread 12 times a second; any new frame restores the full rate.
+    const captureFrames = Effect.gen(function* () {
+      let delayMs = RECORDING_FRAME_INTERVAL_MS;
+      while (true) {
+        yield* Effect.sleep(delayMs);
+        const outcome = yield* capturePreviewFrame(tabId).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Background preview frame capture failed.", {
+              tabId,
+              error,
+            }),
+          ),
+        );
+        delayMs =
+          outcome === "unchanged"
+            ? Math.min(delayMs * 2, FALLBACK_CAPTURE_MAX_INTERVAL_MS)
+            : RECORDING_FRAME_INTERVAL_MS;
+      }
+    });
     const captureInitialFrame = yield* SynchronizedRef.modifyEffect(
       frameCaptureSessionsRef,
       (sessions) => {
@@ -3924,7 +3952,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             let scope = current.scope;
             if (consumer === "picture-in-picture" && scope === null) {
               scope = yield* Scope.fork(parentScope, "sequential");
-              yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+              yield* Effect.forkIn(captureFrames, scope);
               yield* startScreencast(tabId, wc);
             }
             return [
@@ -3962,7 +3990,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             consumer === "picture-in-picture" ? yield* Scope.fork(parentScope, "sequential") : null;
           if (scope !== null) {
             yield* startScreencast(tabId, wc);
-            yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
+            yield* Effect.forkIn(captureFrames, scope);
           }
           return [
             consumer === "picture-in-picture",

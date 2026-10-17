@@ -2,8 +2,8 @@
 # Register a trusted macOS Buildkite agent for T3 Pretty Origin CI.
 #
 # Self-hosted macos-release still runs Origin PR review, comments, the
-# GHA importer, upstream sync, GitHub mirror, and relay (CURSOR_API_KEY /
-# origin CLI / GITHUB_MIRROR_SSH_KEY / PLANETSCALE_* / matching Go).
+# GHA importer, upstream sync, and relay (CURSOR_API_KEY /
+# origin CLI / PLANETSCALE_* / matching Go).
 # Hosted macos-medium / macos-large take Mac packaging that does not need
 # those secrets. REVIEW_ONLY=1 refuses packaging if a stale pipeline.yml
 # still matches this queue.

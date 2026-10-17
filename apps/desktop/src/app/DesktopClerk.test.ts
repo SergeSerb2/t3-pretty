@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - Hosted handoff test uses a real localhost listener without an OpenAI account.
 import * as NodeHttp from "node:http";
+import * as NodeEvents from "node:events";
 import * as NodePath from "@effect/platform-node/NodePath";
 import { codexAuthHandoffUrl, readCodexAuthDelivery } from "@t3tools/shared/codexAuthHandoff";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
@@ -227,7 +228,12 @@ describe("DesktopClerk", () => {
 
       assert.isTrue(Exit.isSuccess(exit));
       assert.equal(quit.mock.calls.length, 0);
-      assert.deepEqual(registeredEvents, ["open-url", "open-file", "second-instance"]);
+      assert.deepEqual(registeredEvents, [
+        "browser-window-created",
+        "open-url",
+        "open-file",
+        "second-instance",
+      ]);
     }).pipe(
       Effect.provide(layerDesktopClerk()),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
@@ -273,8 +279,18 @@ it.effect(
     createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const revealed = Promise.withResolvers<void>();
-    const loadURL = vi.fn(async (_url: string) => undefined);
-    const window = { loadURL };
+    const welcomeLoaded = Promise.withResolvers<void>();
+    const loadURL = vi.fn(async (url: string) => {
+      if (url.includes("/welcome")) welcomeLoaded.resolve();
+    });
+    const window = {
+      loadURL,
+      isDestroyed: () => false,
+      webContents: {
+        isLoadingMainFrame: () => false,
+        getURL: () => "t3code-dev://app/",
+      },
+    };
     const electronApp = {
       on: (name: string, listener: (...args: unknown[]) => void) =>
         Effect.sync(() => {
@@ -299,13 +315,79 @@ it.effect(
       ]);
       yield* Effect.promise(() => revealed.promise);
       assert.deepEqual(loadURL.mock.calls, [
-        ["t3code-dev://app/settings/providers?instanceId=work"],
+        ["t3code-dev://app/#/settings/providers?instanceId=work"],
       ]);
       listeners.get("open-url")!(event, "t3code-dev://app/welcome#agents:machine-id");
+      yield* Effect.promise(() => welcomeLoaded.promise);
+      assert.deepEqual(loadURL.mock.calls[1], ["t3code-dev://app/#/welcome#agents:machine-id"]);
       assert.equal(event.preventDefault.mock.calls.length, 1);
     }).pipe(
       Effect.scoped,
       Effect.provide(layerDesktopClerk()),
+      Effect.provideService(ElectronApp.ElectronApp, electronApp),
+      Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
+      Effect.provideService(DesktopWebLinks.DesktopWebLinks, ignoreWebLinks),
+    );
+  },
+);
+
+it.effect.each(["startup", "open-url", "second-instance"] as const)(
+  "keeps a provider return from %s until the desktop window finishes loading",
+  (entry) => {
+    storageMock.mockReturnValue(storageAdapter);
+    createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const revealed = Promise.withResolvers<void>();
+    const loadURL = vi.fn(async (_url: string) => undefined);
+    let loading = true;
+    const webContents = Object.assign(new NodeEvents.EventEmitter(), {
+      getURL: () => (loading ? "" : "t3code-dev://app/"),
+      isLoadingMainFrame: () => loading,
+    });
+    const window = { loadURL, webContents, isDestroyed: () => false };
+    let main: typeof window | undefined;
+    const destination = "t3code-dev://app/settings/providers?instanceId=work&code=never-forward";
+    const electronApp = {
+      on: (name: string, listener: (...args: unknown[]) => void) =>
+        Effect.sync(() => {
+          listeners.set(name, listener);
+        }),
+    } as unknown as ElectronApp.ElectronApp["Service"];
+    const electronWindow = {
+      currentMainOrFirst: Effect.sync(() => Option.fromNullishOr(main)),
+      reveal: () => Effect.sync(() => revealed.resolve()),
+    } as unknown as ElectronWindow.ElectronWindow["Service"];
+    return Effect.gen(function* () {
+      const clerk = yield* DesktopClerk.DesktopClerk;
+      yield* clerk.configure;
+      if (entry === "open-url") {
+        listeners.get("open-url")!({ preventDefault: vi.fn() }, destination);
+      } else if (entry === "second-instance") {
+        listeners.get("second-instance")!({}, ["t3", destination]);
+      }
+      yield* Effect.yieldNow;
+      assert.deepEqual(loadURL.mock.calls, []);
+
+      main = window;
+      listeners.get("browser-window-created")?.({}, window);
+      assert.deepEqual(loadURL.mock.calls, []);
+      webContents.emit("did-finish-load");
+      yield* Effect.yieldNow;
+      assert.deepEqual(loadURL.mock.calls, []);
+      loading = false;
+      webContents.emit("did-stop-loading");
+      yield* Effect.yieldNow;
+      assert.deepEqual(loadURL.mock.calls, [
+        ["t3code-dev://app/#/settings/providers?instanceId=work"],
+      ]);
+      yield* Effect.promise(() => revealed.promise);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(layerDesktopClerk()),
+      Effect.provideService(
+        HostProcess.Arguments,
+        entry === "startup" ? ["t3", destination] : ["t3"],
+      ),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
       Effect.provideService(DesktopWebLinks.DesktopWebLinks, ignoreWebLinks),

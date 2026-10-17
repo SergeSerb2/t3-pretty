@@ -26,6 +26,7 @@ const defaultEnvironmentInput = {
   isPackaged: true,
   resourcesPath: "/Applications/T3 Pretty.app/Contents/Resources",
   runningUnderArm64Translation: false,
+  buildFlavor: "public",
 } satisfies DesktopEnvironment.MakeDesktopEnvironmentInput;
 
 type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> & {
@@ -223,8 +224,8 @@ describe("DesktopAppIdentity", () => {
         assert.equal(Option.getOrNull(yield* identity.commitHash), "0123456789ab");
         yield* identity.configure;
 
-        assert.deepEqual(calls.setName, ["T3 Pretty (Alpha)"]);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Pretty (Alpha)");
+        assert.deepEqual(calls.setName, ["T3 Pretty"]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, "T3 Pretty");
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         // Packaged: the bundle's own icon stands, so a custom one the user
@@ -239,6 +240,61 @@ describe("DesktopAppIdentity", () => {
           },
         },
         pngIconPath: Option.some("/icon.png"),
+      },
+    );
+  });
+
+  it.effect.each([
+    {
+      buildFlavor: "internal",
+      appVersion: "1.2.3",
+      dev: false,
+      nativeName: "T3 Pretty Internal Beta",
+      displayName: "T3 Pretty Internal (Beta)",
+    },
+    {
+      buildFlavor: "public",
+      appVersion: "1.2.3",
+      dev: true,
+      nativeName: "T3 Pretty Dev",
+      displayName: "T3 Pretty (Dev)",
+    },
+    {
+      buildFlavor: "public",
+      appVersion: "1.2.3-preview.20261016.1",
+      dev: false,
+      nativeName: "T3 Pretty Nightly",
+      displayName: "T3 Pretty (Nightly)",
+    },
+    {
+      buildFlavor: "public",
+      appVersion: "1.2.3-nightly.20261016.1",
+      dev: false,
+      nativeName: "T3 Pretty Nightly",
+      displayName: "T3 Pretty (Nightly)",
+    },
+    {
+      buildFlavor: "public",
+      appVersion: "1.2.3-beta.1",
+      dev: false,
+      nativeName: "T3 Pretty Beta",
+      displayName: "T3 Pretty (Beta)",
+    },
+  ] as const)("keeps $buildFlavor $appVersion development=$dev native names", (input) => {
+    const calls: ElectronAppCalls = { setAboutPanelOptions: [], setDockIcon: [], setName: [] };
+    return withIdentity(
+      Effect.gen(function* () {
+        yield* (yield* DesktopAppIdentity.DesktopAppIdentity).configure;
+        assert.deepEqual(calls.setName, [input.nativeName]);
+        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, input.displayName);
+      }),
+      {
+        calls,
+        environment: {
+          buildFlavor: input.buildFlavor,
+          appVersion: input.appVersion,
+          env: input.dev ? { VITE_DEV_SERVER_URL: "http://localhost:5173" } : {},
+        },
       },
     );
   });

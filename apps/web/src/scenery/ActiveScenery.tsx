@@ -45,6 +45,7 @@ import { preloadWallpaper } from "./sceneryWallpaper";
 import { wallpaperURL } from "./unsplash";
 import { useActiveThreadKey } from "./useActiveThreadKey";
 import { useSyncedSceneryPhotoSet } from "./useSyncedSceneryPhotoSet";
+import { useSyncedSceneryAppearance } from "./useSyncedSceneryAppearance";
 import "./scenery.css";
 
 const CONTRAST_QUERY = "(prefers-contrast: more)";
@@ -83,6 +84,7 @@ function useReducedTransparency(): boolean {
 }
 
 export default function ActiveScenery() {
+  useSyncedSceneryAppearance();
   const increasedContrast = useIncreasedContrast();
   const reducedTransparency = useReducedTransparency();
   const threadKey = useActiveThreadKey();

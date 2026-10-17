@@ -46,6 +46,19 @@ describe("supportsSharedSettingsSync", () => {
 });
 
 describe("splitSharedServerPatch", () => {
+  it("shares photo adjustments and contrast only with servers that support them", () => {
+    const patch = { sceneryAppearance: { blur: 0, translucency: 0.5, contrast: 135 } };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+    expect(filterSharedServerPatch(patch, undefined)).toEqual({});
+    expect(filterSharedServerPatch(patch, { sceneryAppearance: true })).toEqual(patch);
+    expect(
+      pickSharedServerSettings(
+        { ...DEFAULT_SERVER_SETTINGS, ...patch },
+        { sceneryAppearance: true },
+      ),
+    ).toMatchObject(patch);
+  });
+
   it("keeps project overrides local: project ids belong to one environment", () => {
     const patch = {
       projectSettingsOverrides: { [ProjectId.make("project")]: { defaultAutoPull: true } },
@@ -253,6 +266,18 @@ describe("pickSharedServerSettings", () => {
 });
 
 describe("filterSharedServerPatch", () => {
+  it("only copies versioned rail layouts to servers that advertise support", () => {
+    const sidebarProjectLayout = {
+      version: 1,
+      folders: [],
+      assignments: {},
+      projectOrder: ["repo"],
+    };
+    const patch = { sidebarProjectLayout, sidebarAutoSettleOnMerge: false };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+    expect(filterSharedServerPatch(patch, {})).toEqual({ sidebarAutoSettleOnMerge: false });
+    expect(filterSharedServerPatch(patch, { sidebarProjectLayout: true })).toEqual(patch);
+  });
   it.each([true, false])(
     "resets a disabled default provider only on the originating environment (%s)",
     (targetIsSource) => {
@@ -379,6 +404,28 @@ describe("filterSharedServerPatch", () => {
     });
     expect(
       filterSharedServerPatch(patch, { ...restartCapabilities, globalEnvironment: true }),
+    ).toEqual(patch);
+  });
+
+  it("shares automatic provider updates only when the target advertises the capability", () => {
+    const patch = { autoUpdateProviders: false, sidebarAutoSettleAfterDays: 7 };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+    expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+    expect(
+      filterSharedServerPatch(patch, { ...restartCapabilities, providerAutoUpdate: true }),
+    ).toEqual(patch);
+  });
+
+  it("shares Agent Perf benchmarks only when the target advertises the capability", () => {
+    const patch = { agentPerfBenchmarks: true, sidebarAutoSettleAfterDays: 7 };
+    expect(splitSharedServerPatch(patch)).toEqual({ sharedPatch: patch, localPatch: {} });
+    expect(filterSharedServerPatch(patch, restartCapabilities)).toEqual({
+      sidebarAutoSettleAfterDays: 7,
+    });
+    expect(
+      filterSharedServerPatch(patch, { ...restartCapabilities, agentPerfBenchmark: true }),
     ).toEqual(patch);
   });
 });

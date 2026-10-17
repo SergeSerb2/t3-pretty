@@ -4,6 +4,7 @@ import { LogInIcon } from "lucide-react";
 
 import { openClerkGate, useClerkGateOpen } from "../../cloud/clerkGate";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
+import { connectBrowserAuthHandoffUrl } from "../../cloud/browserAuth";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../ui/sidebar";
 import { T3_CONNECT_ACCOUNT_PAGES } from "./T3ConnectAccountPages";
 import { useT3ConnectAuthPrompt } from "./useT3ConnectAuthPrompt";
@@ -33,7 +34,11 @@ function SignInButton({ onClick }: { readonly onClick: () => void }) {
       <SidebarMenuItem>
         <SidebarMenuButton onClick={onClick}>
           <LogInIcon />
-          <span>Sign in to {SURGE_CODE_ACCOUNT_NAME}</span>
+          <span>
+            {connectBrowserAuthHandoffUrl() !== null
+              ? `Open ${SURGE_CONNECT_NAME}`
+              : `Sign in to ${SURGE_CODE_ACCOUNT_NAME}`}
+          </span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

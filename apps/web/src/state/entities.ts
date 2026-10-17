@@ -380,3 +380,10 @@ export function readWritableThreadRef(target: ScopedThreadRef): ScopedThreadRef 
     ? target
     : scopeThreadRef(environmentId, target.threadId);
 }
+
+export function readEnvironmentSupportsThreadSharing(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadSharing === true
+  );
+}

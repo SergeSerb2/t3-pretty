@@ -1,3 +1,5 @@
+import { openThreadShareDialog } from "../components/ThreadShareDialog";
+import { readEnvironmentSupportsThreadSharing } from "../state/entities";
 import { useCopyThreadConversation } from "./useCopyThreadConversation";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
@@ -136,6 +138,7 @@ export function useThreadActionMenu(input: {
         if (!thread) return;
         const now = new Date();
         const supports = {
+          sharing: readEnvironmentSupportsThreadSharing(threadRef.environmentId),
           settlement: readEnvironmentSupportsSettlement(threadRef.environmentId),
           autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
           snooze: readEnvironmentSupportsSnooze(threadRef.environmentId),
@@ -207,6 +210,9 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "share-thread":
+            openThreadShareDialog(threadRef);
+            return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.

@@ -99,6 +99,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
         "node-pty",
         "playwright-core",
         "sharp",
+        "undici",
       ],
     );
   });

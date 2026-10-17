@@ -151,7 +151,7 @@ export function useThreadHeaderOptions(props: {
       : undefined,
     title: props.title,
     headerBackVisible: false,
-    // Compact uses the mint glass back button when a previous route exists;
+    // Compact uses a native back button when a previous route exists;
     // deep links / cold starts get an explicit Home button instead.
     // Split view always uses its custom left items.
     unstable_headerLeftItems: layout.usesSplitView

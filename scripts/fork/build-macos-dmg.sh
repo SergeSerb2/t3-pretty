@@ -221,7 +221,7 @@ for manifest in "$publish"/*-mac.yml; do
   grep -Eq '^  - url: .*\.zip$' "$manifest" || { echo "error: $manifest lists no zip" >&2; exit 1; }
 done
 
-if command -v buildkite-agent >/dev/null; then
+if [[ -n "${BUILDKITE_JOB_ID:-}" ]] && command -v buildkite-agent >/dev/null; then
   (cd "$publish" && buildkite-agent artifact upload '*')
 fi
 

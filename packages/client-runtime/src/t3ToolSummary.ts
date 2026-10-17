@@ -231,6 +231,9 @@ export function summarizeT3ToolCalls(
     case "thread-transfers":
       label = phrase("Checked", "check", `thread transfers ${times}`);
       break;
+    case "thread-share":
+      label = phrase("Managed", "manage", `public thread sharing ${times}`);
+      break;
     case "thread-organize":
       label = phrase("Organized", "organize", `threads ${times}`);
       break;

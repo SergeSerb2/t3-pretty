@@ -230,6 +230,11 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
     (target) =>
       target.environment.serverConfig.environment.capabilities.threadRestartContinuation === true,
   );
+  // Older servers ignore the key, so one of them must not lock the others.
+  const supportsProviderAutoUpdate = targets.some(
+    (target) =>
+      target.environment.serverConfig.environment.capabilities.providerAutoUpdate === true,
+  );
   const disabledFor = (key: string) =>
     disabled ||
     (projectSelected &&
@@ -472,6 +477,28 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                       disabled={disabledFor("enableProviderUpdateChecks")}
                       onValueChange={(value) => write({ enableProviderUpdateChecks: value })}
                     />
+                    <View className="border-t border-border-subtle">
+                      <SettingsSwitchRow
+                        icon="arrow.down.circle"
+                        label="Update providers automatically"
+                        subtitle={
+                          projectSelected
+                            ? "Environment-wide setting. Select All projects to change it."
+                            : !supportsProviderAutoUpdate
+                              ? "Update the selected servers to use automatic provider updates."
+                              : targets.every(
+                                    (target) =>
+                                      target.environment.serverConfig.environment.capabilities
+                                        .providerAutoUpdate === true,
+                                  )
+                                ? "Install new provider CLI releases when no agent is using that provider."
+                                : "Older servers ignore this setting until they are updated."
+                        }
+                        value={uniform("autoUpdateProviders")}
+                        disabled={disabledFor("autoUpdateProviders") || !supportsProviderAutoUpdate}
+                        onValueChange={(value) => write({ autoUpdateProviders: value })}
+                      />
+                    </View>
                     <View className="border-t border-border-subtle">
                       <SettingsSwitchRow
                         icon="arrow.uturn.forward"

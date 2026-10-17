@@ -85,6 +85,24 @@ function printField(argv) {
 
 const CHANGELOG_SUBJECT_PREFIX = "docs(changelog): add release notes through v";
 
+function pinnedReleaseVersion() {
+  const version = process.env.T3CODE_RELEASE_VERSION;
+  const sourceSha = process.env.T3CODE_RELEASE_SOURCE_SHA;
+  if (!version && !sourceSha) return null;
+  const match = NIGHTLY_TAG.exec(`v${version ?? ""}`);
+  if (!match || !sourceSha || !/^[0-9a-f]{40,64}$/u.test(sourceSha)) {
+    throw new Error("A pinned release needs a nightly version and its full source SHA");
+  }
+  if (sourceSha !== git("rev-parse", "HEAD")) {
+    throw new Error("Pinned release source SHA does not match this checkout");
+  }
+  const floor = process.env.T3_FORK_BUILD_FLOOR;
+  if (floor && BigInt(match[5]) < BigInt(floor)) {
+    throw new Error("Pinned release version is below the published feed floor");
+  }
+  return version;
+}
+
 function reusedChangelogVersion() {
   let subject;
   try {
@@ -123,10 +141,15 @@ function emit(values, field) {
 
 function main() {
   const field = printField(process.argv.slice(2));
-  const reused = reusedChangelogVersion();
+  const pinned = pinnedReleaseVersion();
+  const changelogVersion = reusedChangelogVersion();
+  if (pinned && changelogVersion && pinned !== changelogVersion) {
+    throw new Error("Pinned release conflicts with the version recorded by this changelog commit");
+  }
+  const reused = pinned ?? changelogVersion;
   if (reused) {
-    // Changelog-commit retries already minted a version. Reuse it so hosted
-    // preflight can still run imported jobs without minting another release.
+    // One local coordinator freezes the version and source for all platforms.
+    // Changelog retries likewise reuse their version after tags/feeds advance.
     emit(
       {
         minted: "true",

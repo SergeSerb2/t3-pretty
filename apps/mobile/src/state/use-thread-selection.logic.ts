@@ -93,7 +93,6 @@ export function threadDetailToShell(
     scenery: thread.scenery,
     storedAt: thread.storedAt,
     enabledSkillIds: thread.enabledSkillIds,
-    subagentPolicy: thread.subagentPolicy,
     automationRun: thread.automationRun,
     liveHeadline: thread.liveHeadline,
     planProgress: thread.planProgress,

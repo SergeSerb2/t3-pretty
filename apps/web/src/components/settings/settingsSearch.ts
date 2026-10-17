@@ -25,7 +25,6 @@ export type SettingsPath =
   | "/settings/snap-shot"
   | "/settings/providers"
   | "/settings/instructions"
-  | "/settings/agents"
   | "/settings/skills"
   | "/settings/apps"
   | "/settings/integrations"
@@ -116,7 +115,6 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
   "/settings/instructions": "Instructions",
-  "/settings/agents": "Agents",
   "/settings/skills": "Skills",
   "/settings/apps": "Apps",
   "/settings/integrations": "Integrations",
@@ -579,6 +577,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "provider-auto-update",
+    title: "Update providers automatically",
+    to: "/settings/general",
+    searchTerms: ["auto update install upgrade latest cli version machines codex claude grok"],
+    scope: "environment-defaults",
+  },
+  {
     id: "continue-threads-after-server-update",
     title: "Continue threads after restarts",
     to: "/settings/general",
@@ -893,16 +898,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Provider instruction files",
     to: "/settings/instructions",
     searchTerms: ["AGENTS.md CLAUDE.md codex claude cursor provider instructions"],
-  },
-  {
-    id: "subagents-enabled",
-    title: "Use subagents",
-    to: "/settings/agents",
-  },
-  {
-    id: "subagents-default-child",
-    title: "Default child model",
-    to: "/settings/agents",
   },
   {
     id: "skills-library",
@@ -1274,6 +1269,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
     searchTerms: [
       "automatic machine environment resources cpu memory capacity preference weight shared projects",
+      "agent perf agentperf agentmark benchmark speed fastest machine",
     ],
   },
   {
@@ -1305,7 +1301,6 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/keybindings": null,
   "/settings/providers": null,
   "/settings/instructions": null,
-  "/settings/agents": null,
   "/settings/skills": null,
   "/settings/apps": null,
   "/settings/integrations": null,

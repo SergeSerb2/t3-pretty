@@ -1,3 +1,4 @@
+import * as ThreadSharing from "../../../sharing/ThreadSharing.ts";
 import {
   type CommandId,
   type RuntimeRequestId,
@@ -76,6 +77,27 @@ const writesThread = <P extends { readonly threadId?: ThreadId | undefined }, A,
 ) => McpToolAccess.writesThreads((params: P) => [params.threadId], handle);
 
 export const layer = McpToolAccess.toLayer(ThreadToolkit, {
+  t3_thread_share: writesThread((input) =>
+    Effect.gen(function* () {
+      const { projection } = yield* readThread(input.threadId, []);
+      const sharing = yield* ThreadSharing.ThreadSharing;
+      const target = { threadId: projection.thread.id };
+      if (input.action === "get")
+        return yield* sharing.get(target).pipe(Effect.mapError(unavailable));
+      if (input.action === "revoke") {
+        yield* sharing.revoke(target).pipe(Effect.mapError(unavailable));
+        return null;
+      }
+      if (!input.publicBaseUrl)
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "publish requires publicBaseUrl.",
+        });
+      return yield* sharing
+        .publish({ ...target, publicBaseUrl: input.publicBaseUrl })
+        .pipe(Effect.mapError(unavailable));
+    }),
+  ),
   run_scheduled_task_now: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       const scheduler = yield* ScheduledTasks.ScheduledTaskService;

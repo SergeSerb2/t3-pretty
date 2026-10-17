@@ -14,6 +14,7 @@ import {
   type UnifiedSettings,
 } from "@t3tools/contracts";
 import { useCallback, useMemo } from "react";
+import { usePublishSceneryAppearance } from "../../scenery/useSyncedSceneryPhotoSet";
 
 import {
   mergeEnvironmentSettings,
@@ -116,9 +117,21 @@ function useRunScopedPlan() {
 export function useUpdateScopedSettings() {
   const { scope, environments } = useSettingsScope();
   const run = useRunScopedPlan();
+  const publishAppearance = usePublishSceneryAppearance();
   return useCallback(
-    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch)),
-    [environments, run, scope],
+    (patch: ScopedSettingsPatch) => {
+      const { appearanceContrast, ...scopedPatch } = patch;
+      // Appearance belongs to the client across environments, including when
+      // Settings is scoped to one project or a single machine.
+      if (appearanceContrast !== undefined) {
+        void persistClientSettingsPatch({ appearanceContrast });
+        publishAppearance({ contrast: appearanceContrast });
+      }
+      if (Object.keys(scopedPatch).length > 0) {
+        run(planScopedSettingsPatch(scope, environments, scopedPatch));
+      }
+    },
+    [environments, publishAppearance, run, scope],
   );
 }
 

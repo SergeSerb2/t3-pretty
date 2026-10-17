@@ -31,7 +31,7 @@ import { useResolveClassNames } from "uniwind";
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { mintGlassBackOptions, mintGlassCustomItem } from "./native/mintGlassHeaderItems";
-import { HomeRouteScreen } from "./features/home/HomeRouteScreen";
+import { WorkspaceRootScreen } from "./features/workspace/WorkspaceRootScreen";
 import { AndroidWorkspaceTabsProvider } from "./features/workspace/AndroidWorkspaceTabsProvider";
 import {
   PullRequestRouteScreen,
@@ -773,7 +773,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
   }),
   screens: {
     Home: createNativeStackScreen({
-      screen: HomeRouteScreen,
+      screen: WorkspaceRootScreen,
       linking: "",
       options: {
         ...GLASS_HEADER_OPTIONS,

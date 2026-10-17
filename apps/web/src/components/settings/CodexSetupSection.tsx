@@ -38,6 +38,7 @@ import { SettingsRow } from "./settingsLayout";
 import { AddCodexAccountDialog } from "./AddCodexAccountDialog";
 import { getOnboardingProviderState } from "../../onboarding/providerReadiness.logic";
 import { getProviderSummary } from "./providerStatus";
+import { codexSetupReturnUrl } from "./CodexSetupSection.logic";
 
 const noop = () => undefined;
 
@@ -260,10 +261,7 @@ function ManagedCodexSetup({
     (window.desktopBridge !== undefined || isLoopbackHost(window.location.hostname))
       ? primaryEnvironmentId
       : null;
-  const returnUrl = new URL(window.location.href);
-  if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
-  if (returnUrl.pathname === "/settings/providers")
-    returnUrl.searchParams.set("instanceId", instanceId);
+  const returnUrl = codexSetupReturnUrl(window.location.href, environmentId, instanceId);
   const needsManualCallback = remoteWeb;
   const callbackHelpId = useId();
   const [callbackHelpOpen, setCallbackHelpOpen] = useState(false);
@@ -404,10 +402,7 @@ function ManagedCodexSetup({
       openRequested.current = true;
       setTransferFailed(false);
       setRequestedMethodId(methodId);
-      const returnUrl = new URL(window.location.href);
-      if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
-      if (returnUrl.pathname === "/settings/providers")
-        returnUrl.searchParams.set("instanceId", instanceId);
+      const returnUrl = codexSetupReturnUrl(window.location.href, environmentId, instanceId);
       if (primaryAuthEnvironmentId) {
         const attemptId = `${handoffId}:${++handoffSequence.current}`;
         const succeeded = await run(

@@ -31,6 +31,11 @@ import {
 } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { HomeSuggestion, HomeSuggestionId, HomeSuggestionsDigest } from "./homeSuggestions.ts";
+import {
+  RemoteContextAuthorization,
+  RemoteContextPeers,
+  RemoteContextTicket,
+} from "./remoteContext.ts";
 
 export const SECURE_RELAY_URL_MAX_LENGTH = 8_192;
 export const RELAY_PUBLIC_KEY_MAX_LENGTH = AUTH_CREDENTIAL_MAX_LENGTH;
@@ -1366,6 +1371,20 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
+const RelayPeerGroup = HttpApiGroup.make("peers")
+  .add(
+    HttpApiEndpoint.get("list", "/v1/peers", {
+      success: RemoteContextPeers,
+      error: RelayAuthAndInternalErrors,
+    }),
+    HttpApiEndpoint.post("authorize", "/v1/peers/authorize", {
+      payload: RemoteContextAuthorization,
+      success: RemoteContextTicket,
+      error: RelayAuthAndInternalErrors,
+    }),
+  )
+  .middleware(RelayEnvironmentAuth);
+
 export const RELAY_HOME_SUGGESTIONS_MAX_CARDS = 32;
 export const RELAY_HOME_SUGGESTIONS_TITLE_MEMORY = 64;
 export const RELAY_HOME_SUGGESTIONS_MAX_DIGESTS = 16;
@@ -1495,6 +1514,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayTokenGroup,
     RelayDpopClientGroup,
     RelayServerGroup,
+    RelayPeerGroup,
     RelayHomeSuggestionsGroup,
 
     RelayHooksGroup,

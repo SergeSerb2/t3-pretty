@@ -3,6 +3,7 @@ import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import {
   loadRepoEnv,
+  isPublicReleaseBuild,
   readReleaseTrainVersion,
   type T3CodeBuildFlavor,
 } from "../../scripts/lib/public-config.ts";
@@ -164,7 +165,18 @@ export function resolveVoiceDictationPlugins(
           },
         ],
       ]
-    : ["./plugins/withoutPublicExpoAudio.cjs"];
+    : [
+        [
+          "expo-audio",
+          {
+            // Playback and the provider's module-scope imports need ExpoAudio
+            // in public binaries, even though recording remains internal.
+            microphonePermission: false,
+            recordAudioAndroid: false,
+            enableBackgroundPlayback: false,
+          },
+        ],
+      ];
 }
 
 const variant = {
@@ -404,6 +416,9 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(repoEnv.T3CODE_ANDROID_VERSION_CODE
+      ? { versionCode: Number(repoEnv.T3CODE_ANDROID_VERSION_CODE) }
+      : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -420,7 +435,10 @@ const config: ExpoConfig = {
     // withAndroidPredictiveBackCompat on Android 13-15.
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
-    blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
+    blockedPermissions: [
+      "android.permission.ACTIVITY_RECOGNITION",
+      ...(!isInternalBuild ? ["android.permission.RECORD_AUDIO"] : []),
+    ],
   },
   web: {
     favicon: variant.assets.appIcon,
@@ -483,15 +501,6 @@ const config: ExpoConfig = {
               : {}),
           },
         },
-      },
-    ],
-    [
-      "expo-audio",
-      {
-        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
-        recordAudioAndroid: false,
-        enableBackgroundPlayback: false,
-        enableBackgroundRecording: false,
       },
     ],
     [
@@ -615,5 +624,26 @@ const config: ExpoConfig = {
   },
   ...(expoOwner ? { owner: expoOwner } : {}),
 };
+
+if (isPublicReleaseBuild(repoEnv)) {
+  if (
+    APP_VARIANT !== "production" ||
+    config.ios?.bundleIdentifier !== "com.sergeserbinenko.t3pretty.public" ||
+    config.android?.package !== "com.sergeserbinenko.t3pretty.app" ||
+    JSON.stringify(config.ios.associatedDomains) !==
+      JSON.stringify(["applinks:clerk.t3.codes", "webcredentials:clerk.t3.codes"])
+  ) {
+    throw new Error(
+      "Public mobile releases require the production public app identities and domains.",
+    );
+  }
+  const versionCode = config.android.versionCode;
+  if (
+    versionCode !== undefined &&
+    (!Number.isInteger(versionCode) || versionCode < 1 || versionCode > 2_100_000_000)
+  ) {
+    throw new Error("T3CODE_ANDROID_VERSION_CODE must be an integer from 1 to 2100000000.");
+  }
+}
 
 export default config;

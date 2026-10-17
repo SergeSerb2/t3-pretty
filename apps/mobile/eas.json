@@ -73,6 +73,31 @@
       "ios": {
         "image": "macos-tahoe-26.6-xcode-27.1"
       }
+    },
+    "public-apk": {
+      "node": "24.13.1",
+      "pnpm": "11.10.0",
+      "credentialsSource": "local",
+      "autoIncrement": false,
+      "env": {
+        "APP_VARIANT": "production",
+        "T3CODE_BUILD_FLAVOR": "public",
+        "T3CODE_PUBLIC_RELEASE": "1",
+        "T3CODE_MOBILE_UPDATES_ENABLED": "0",
+        "MOBILE_VERSION_POLICY": "appVersion",
+        "NODE_OPTIONS": "--max-old-space-size=4096"
+      },
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "public-aab": {
+      "extends": "public-apk",
+      "distribution": "store",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {

@@ -19,6 +19,7 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from ".
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { ThreadShareDialogHost } from "../components/ThreadShareDialog";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import {
   ProjectFolderIconDialogHost,
@@ -212,6 +213,7 @@ function RootRouteView() {
           <SceneryHost />
           <ProviderAuthCallbackCoordinator />
           <CustomSnoozeDialogHost />
+          <ThreadShareDialogHost />
           <Outlet />
         </AnchoredToastProvider>
       </ToastProvider>
@@ -254,8 +256,8 @@ function RootRouteView() {
           hostedStatic={authGateState.status === "hosted-static"}
         >
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
+          {isElectron ? <DesktopAppActivationCoordinator /> : null}
+          {isElectron ? <DesktopWebLinkCoordinator /> : null}
           {isElectron ? <RunningThreadKeepAlive /> : null}
           <RelayClientInstallDialog />
           <ConnectOnboardingDialog />
@@ -266,6 +268,7 @@ function RootRouteView() {
           <ReopenClosedViewShortcut />
           <ConfirmDialogHost />
           <CustomSnoozeDialogHost />
+          <ThreadShareDialogHost />
           <ProjectFolderNameDialogHost />
           <ProjectFolderIconDialogHost />
           <SlowRpcRequestToastCoordinator />

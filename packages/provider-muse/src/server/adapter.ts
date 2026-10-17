@@ -230,6 +230,7 @@ interface PendingRequest {
   request: OrchestrationV2RuntimeRequest;
   node: OrchestrationV2ExecutionNode;
   item: OrchestrationV2TurnItem;
+  readonly owner: ActiveTurn | undefined;
   /** What T3 answered, recorded on the request once Muse confirms it. */
   response?: Pick<OrchestrationV2RuntimeRequest, "decision" | "answers">;
 }
@@ -353,6 +354,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       let active: ActiveTurn | undefined;
       // The last finished turn, so context usage reported after it still lands on it.
       let lastProviderTurn: OrchestrationV2ProviderTurn | undefined;
+      const turnOrdinals = new Map<string, number>();
       const agentEndedAt = new Map<string, DateTime.Utc>();
       // "default" is the catalog's default model, from the provider snapshot. Without
       // one, Muse keeps whatever model the session already runs.
@@ -370,10 +372,17 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       // Titles per native subagent and workflow child attempt; later revisions drop the label.
       const agentTitles = new Map<string, string>();
       // Background work that finished since the last turn, reported to the turn Muse starts for it.
-      const finishedBackground: Array<BackgroundWorkReport> = [];
+      const finishedBackground: Array<{
+        readonly report: BackgroundWorkReport;
+        readonly owner: ActiveTurn;
+      }> = [];
       // A turn Muse started on its own, held until the continuation run T3 opens for it takes it.
       let wake:
-        | { readonly nativeId: string; readonly events: Array<[string, unknown]> }
+        | {
+            readonly nativeId: string;
+            readonly events: Array<[string, unknown]>;
+            readonly owners: ReadonlyArray<ActiveTurn>;
+          }
         | undefined;
       const emit = (event: ProviderAdapter.ProviderAdapterV2Event) =>
         Queue.offer(events, event).pipe(Effect.asVoid);
@@ -747,14 +756,17 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           if (status === "running") observedChildren.set(item.itemId, turn);
           else if (observedChildren.delete(item.itemId) && active !== turn)
             finishedBackground.push({
-              kind: item.kind === "subagent" ? "subagent" : "background_task",
-              label: item.objective ?? item.entryId ?? item.fallbackText,
-              outcome:
-                status === "completed"
-                  ? "completed"
-                  : status === "cancelled"
-                    ? "cancelled"
-                    : "failed",
+              owner: turn,
+              report: {
+                kind: item.kind === "subagent" ? "subagent" : "background_task",
+                label: item.objective ?? item.entryId ?? item.fallbackText,
+                outcome:
+                  status === "completed"
+                    ? "completed"
+                    : status === "cancelled"
+                      ? "cancelled"
+                      : "failed",
+              },
             });
           if (wasRunning !== observedChildren.has(item.itemId)) yield* syncBackground();
         }
@@ -1235,7 +1247,23 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                   required: true,
                 })),
               };
-        const entry: PendingRequest = { native, request: runtimeRequest, node, item };
+        const childId =
+          native.type === "approval" ? native.value.subagentOrigin?.subagentId : undefined;
+        const owners = new Set(
+          childId === undefined
+            ? []
+            : [...observedChildren].flatMap(([id, candidate]) => {
+                const item = candidate.items.get(id);
+                return item?.subagentId === childId ||
+                  item?.children?.some((child) => child.childId === childId)
+                  ? [candidate]
+                  : [];
+              }),
+        );
+        const owner = previous
+          ? previous.owner
+          : (turn ?? (owners.size === 1 ? [...owners][0] : undefined));
+        const entry: PendingRequest = { native, request: runtimeRequest, node, item, owner };
         pending.set(requestId, entry);
         yield* emit({
           type: "runtime_request.updated",
@@ -1358,9 +1386,14 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         ) {
           if (active && !active.compact) active.joined.add(params.turnId);
           else if (!active && !wake) {
-            const held = { nativeId: params.turnId, events: [] };
+            const finished = finishedBackground.splice(0);
+            const held = {
+              nativeId: params.turnId,
+              events: [],
+              owners: finished.map((entry) => entry.owner),
+            };
             wake = held;
-            const notification = backgroundWorkNotification(finishedBackground.splice(0));
+            const notification = backgroundWorkNotification(finished.map((entry) => entry.report));
             if (thread?.appThreadId && options.continuationRequests)
               yield* options.continuationRequests.offer({
                 threadId: thread.appThreadId,
@@ -1990,6 +2023,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         yield* Effect.gen(function* () {
           thread = turnInput.providerThread;
           active = turn;
+          turnOrdinals.set(providerTurn.id, providerTurn.ordinal);
           yield* emit({
             type: "provider_turn.updated",
             driver: MUSE_PROVIDER,
@@ -2202,24 +2236,52 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         interruptTurn: (args) =>
           Effect.gen(function* () {
             const turn = active;
+            const fullStop = turn?.compact === true || args.requestRuntimeRestart === true;
             if (
-              !turn ||
-              turn.providerTurn.id !== args.providerTurnId ||
-              !validateThread(args.providerThread)
+              !validateThread(args.providerThread) ||
+              (fullStop
+                ? !turnOrdinals.has(args.providerTurnId)
+                : turn?.providerTurn.id !== args.providerTurnId) ||
+              (turn === undefined && args.requestRuntimeRestart !== true)
             )
               return yield* protocolError("This Muse turn is no longer active");
-            turn.interruptRequested = true;
-            if (turn.compact) {
+            // User Stop also ends workflows and held report turns after the root
+            // finishes. They belong to the host, so a root-only interrupt is insufficient.
+            if (fullStop) {
               yield* eventPermit.withPermits(1)(
                 Effect.gen(function* () {
-                  if (active !== turn) return;
+                  // The requested parent can finish while Stop waits for this permit.
+                  const current = active;
+                  const ordinal = turnOrdinals.get(args.providerTurnId)!;
+                  const newer = (owner: ActiveTurn) => owner.providerTurn.ordinal > ordinal;
+                  const latest =
+                    (current?.providerTurn ?? lastProviderTurn)?.id === args.providerTurnId;
+                  // Muse can only stop the whole host. An older parent's carried
+                  // work is safe to stop once later turns left no work there.
+                  if (
+                    (current !== undefined && current.providerTurn.id !== args.providerTurnId) ||
+                    (!latest &&
+                      ([...observedChildren.values()].some(newer) ||
+                        finishedBackground.some((entry) => newer(entry.owner)) ||
+                        (wake !== undefined &&
+                          (wake.owners.some(newer) || wake.owners.length === 0)) ||
+                        [...pending.values()].some((entry) =>
+                          entry.owner ? newer(entry.owner) : true,
+                        )))
+                  )
+                    return yield* protocolError(
+                      "Cannot stop older Muse work while newer or unknown work shares its host",
+                    );
+                  if (broken || closed) return;
+                  if (current) current.interruptRequested = true;
                   hostEpoch++;
                   yield* Effect.tryPromise(() => host.close()).pipe(
-                    Effect.mapError((cause) => protocolError("Cannot stop Muse compaction", cause)),
+                    Effect.mapError((cause) => protocolError("Cannot stop the Muse host", cause)),
                     Effect.onError(failHost),
                   );
                   broken = true;
-                  yield* finish(turn, "interrupted", undefined, "broken");
+                  wake = undefined;
+                  if (current) yield* finish(current, "interrupted", undefined, "broken");
                   yield* settleObservedChildren("interrupted");
                   yield* updateSession("stopped");
                   yield* Queue.end(events);
@@ -2227,6 +2289,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
               );
               return;
             }
+            if (!turn) return;
+            turn.interruptRequested = true;
             // Muse runs a joined turn first, so Stop must end it too.
             for (const joined of turn.joined)
               yield* request("turn/interrupt", { turnId: joined }).pipe(Effect.ignore);

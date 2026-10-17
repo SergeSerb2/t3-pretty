@@ -86,7 +86,6 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
   "/settings/instructions": Settings2Icon,
-  "/settings/agents": BotIcon,
   "/settings/skills": Settings2Icon,
   "/settings/apps": BlocksIcon,
   "/settings/integrations": BlocksIcon,

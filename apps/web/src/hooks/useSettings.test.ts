@@ -201,6 +201,48 @@ describe("client settings hydration", () => {
 });
 
 describe("persistClientSettingsPatch", () => {
+  it("versions grouping edits without changing the saved folder contents", async () => {
+    const layout = {
+      version: 10,
+      folders: [],
+      assignments: { "mac:/repo": "work" },
+      projectOrder: ["mac:/repo"],
+      groupingMode: "repository" as const,
+      groupingOverrides: {},
+    };
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarProjectLayout: layout });
+    await persistClientSettingsPatch({
+      sidebarProjectGroupingMode: "separate",
+      sidebarProjectGroupingOverrides: { "mac:/repo": "repository_path" },
+    });
+    expect(getClientSettings().sidebarProjectLayout).toMatchObject({
+      assignments: layout.assignments,
+      projectOrder: layout.projectOrder,
+      groupingMode: "separate",
+      groupingOverrides: { "mac:/repo": "repository_path" },
+    });
+    expect(getClientSettings().sidebarProjectLayout!.version).toBeGreaterThan(layout.version);
+  });
+  it("versions a sort-mode edit while retaining folders and manual project order", async () => {
+    const layout = {
+      version: 10,
+      folders: [{ id: "work", name: "Work", collapsed: false }],
+      assignments: { repo: "work" },
+      projectOrder: ["repo"],
+      sortOrder: "updated_at" as const,
+    };
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, sidebarProjectLayout: layout });
+    await persistClientSettingsPatch({ sidebarProjectSortOrder: "manual" });
+    const saved = getClientSettings().sidebarProjectLayout!;
+    expect(saved).toEqual({ ...layout, version: expect.any(Number), sortOrder: "manual" });
+    expect(saved.version).toBeGreaterThan(layout.version);
+    const remote = { ...saved, version: saved.version + 1, sortOrder: "created_at" as const };
+    await persistClientSettingsPatch({
+      sidebarProjectLayout: remote,
+      sidebarProjectSortOrder: "created_at",
+    });
+    expect(getClientSettings().sidebarProjectLayout).toEqual(remote);
+  });
   it("waits for settings writes in request order", async () => {
     __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     let finishFirst!: () => void;

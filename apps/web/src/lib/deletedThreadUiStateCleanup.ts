@@ -7,7 +7,6 @@ import { useComposerDraftStore } from "../composerDraftStore";
 import { useDiffPanelStore } from "../diffPanelStore";
 import { usePreviewMiniPlayerStore } from "../previewMiniPlayerStore";
 import { useRightPanelStore } from "../rightPanelStore";
-import { useSceneryStore } from "../scenery/sceneryStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useUiStateStore } from "../uiStateStore";
@@ -23,6 +22,10 @@ export function removeDeletedThreadUiState(ref: ScopedThreadRef): void {
   useRightPanelStore.getState().removeThread(ref);
   useDiffPanelStore.getState().removeThread(ref);
   usePreviewMiniPlayerStore.getState().removeThread(ref);
-  useSceneryStore.getState().removeThread(threadKey);
   useUiStateStore.getState().removeThread(threadKey);
+  // The scenery store bundles a large photo seed; keep it out of the startup chunk.
+  // Its assignments are LRU-capped, so a failed chunk load only leaves one behind.
+  void import("../scenery/sceneryStore")
+    .then(({ useSceneryStore }) => useSceneryStore.getState().removeThread(threadKey))
+    .catch(() => undefined);
 }

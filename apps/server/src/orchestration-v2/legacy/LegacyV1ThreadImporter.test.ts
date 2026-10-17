@@ -62,6 +62,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         const modelJson = yield* encodeJson({ instanceId: `${driver}-work`, model: "default" });
         const cursorJson = yield* encodeJson(cursor);
         yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at) VALUES (${threadId}, ${`legacy-project-${driver}`}, 'Retained native thread', ${modelJson}, 'full-access', 'default', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`;
+        yield* sql`UPDATE projection_threads SET subagent_policy_json = '{"mode":"off"}' WHERE thread_id = ${threadId}`;
         yield* sql`INSERT INTO projection_thread_sessions (thread_id, status, provider_name, provider_instance_id, provider_thread_id, provider_session_id, updated_at) VALUES (${threadId}, 'idle', ${driver}, ${`${driver}-personal`}, ${nativeId}, 'obsolete-runtime-session', '2026-01-01T00:00:00.000Z')`;
         yield* sql`INSERT INTO provider_session_runtime (thread_id, provider_name, adapter_key, runtime_mode, status, last_seen_at, resume_cursor_json) VALUES (${threadId}, ${driver}, ${driver}, 'full-access', 'idle', '2026-01-01T00:00:00.000Z', ${cursorJson})`;
         yield* importer.reconcileShells;
@@ -74,6 +75,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         assert.equal(native?.providerInstanceId, `${driver}-personal`);
         assert.isNull(native?.providerSessionId);
         assert.equal(projection.thread.providerInstanceId, `${driver}-work`);
+        assert.notProperty(projection.thread, "subagentPolicy");
         if (driver === "claudeAgent") {
           assert.equal(native?.nativeMetadata?.configDir, "/isolated/source-claude-profile");
           assert.equal(native?.nativeConversationHeadRef?.nativeId, "native-message-boundary");

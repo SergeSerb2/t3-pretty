@@ -25,12 +25,12 @@ import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructio
 import {
   collectComposerContextReferences,
   sanitizeComposerContextLabel,
+  toKindScopedComposerContextId,
 } from "@t3tools/shared/composerContextReferences";
 
 import {
   type ComposerContextReference,
   producerIdFromComposerContextId,
-  toKindScopedComposerContextId,
 } from "./composerContextReferences";
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
 import type { AttachmentUploadState } from "./attachmentUploadState";

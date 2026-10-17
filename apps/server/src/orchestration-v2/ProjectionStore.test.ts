@@ -3201,6 +3201,40 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect("drives limit recovery from indexed failures instead of all threads", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = yield* addRolledBackRecoveryCandidate("limit-recovery-no-failure");
+      const now = yield* DateTime.now;
+      const { statements, tracer } = traceSqlStatements();
+      const candidates = yield* store
+        .getLimitRecoveryCandidates({ now, autoResume: true, snooze: false })
+        .pipe(Effect.withTracer(tracer));
+      assert.notInclude(
+        candidates.map((candidate) => candidate.id),
+        threadId,
+      );
+
+      const statement = statements.find((query) => query.includes("AS failure_payload_json"));
+      assert.isDefined(statement);
+      const plan = (yield* sql.unsafe<{ readonly detail: string }>(
+        `EXPLAIN QUERY PLAN ${statement}`,
+      )).map((row) => row.detail);
+      assert.isTrue(
+        plan.some(
+          (detail) =>
+            detail.startsWith("SCAN limited ") &&
+            detail.includes("orchestration_v2_projection_turn_items_failed_error_idx"),
+        ),
+      );
+      const threadLookup = plan.find((detail) => detail.startsWith("SEARCH t "));
+      assert.isDefined(threadLookup);
+      assert.include(threadLookup, "(thread_id=?)");
+      assert.isFalse(plan.some((detail) => /^SCAN t(?: |$)/.test(detail)));
+    }),
+  );
+
   it.effect("projects only the latest failed root turn's limit into SQL and memory shells", () =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -3264,6 +3298,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         });
         const candidate = candidates.find((row) => row.id === threadId);
         if (lastErrorClass === "usage_limit") {
+          assert.lengthOf(
+            candidates.filter((row) => row.id === threadId),
+            1,
+          );
           assert.deepEqual(candidate, {
             id: sqlShell.id,
             status: sqlShell.status,

@@ -1,4 +1,4 @@
-import type { EnvironmentId, HostResourcesSnapshot } from "@t3tools/contracts";
+import type { EnvironmentId, HostAgentPerf, HostResourcesSnapshot } from "@t3tools/contracts";
 import { Atom, type AsyncResult } from "effect/reactivity";
 
 export const LOAD_BALANCING_PREFERENCES = [
@@ -13,6 +13,21 @@ export function loadPreferenceForWeight(weight: number | undefined) {
   if (weight === undefined || weight === 50) return 50;
   if (weight === 0) return 0;
   return weight < 50 ? 25 : 100;
+}
+
+/** Settings text for a machine's Agent Perf state; `error` explains the last failed run. */
+export function describeAgentPerf(agentPerf: HostAgentPerf): {
+  readonly label: string;
+  readonly error: string | null;
+} {
+  const score =
+    agentPerf.agentMark === null ? null : `AgentMark ${Math.round(agentPerf.agentMark)}`;
+  const label = agentPerf.running
+    ? score === null
+      ? "Benchmarking now"
+      : `${score} · benchmarking now`
+    : (score ?? (agentPerf.error === null ? "Not benchmarked yet" : "Benchmark failed"));
+  return { label, error: agentPerf.error };
 }
 
 /** Only unresolved drafts subscribe, so routing does not poll idle clients. */
@@ -55,7 +70,21 @@ export function shouldAutoBalanceDraft(input: {
   );
 }
 
-/** Callers supply only connected machines hosting the project and selected provider. */
+function median(values: ReadonlyArray<number>): number | null {
+  if (values.length === 0) return null;
+  // Not `.toSorted()`: older Hermes runtimes on iOS lack it.
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+}
+
+/**
+ * Callers supply only connected machines hosting the project and selected
+ * provider. A machine's capacity is its preference times its free cores and
+ * free memory, scaled by its Agent Perf score (AgentMark). A machine with no
+ * score counts at the median of those that have one, so being unmeasured
+ * neither helps nor hurts it.
+ */
 export function chooseLoadBalancedEnvironment(
   candidates: ReadonlyArray<{
     environmentId: string;
@@ -66,9 +95,7 @@ export function chooseLoadBalancedEnvironment(
   }>,
   now: number,
 ): string | null {
-  let selected: string | null = null;
-  let bestScore = 0;
-  for (const { environmentId, resources, receivedAt, weight } of candidates) {
+  const usable = candidates.flatMap(({ environmentId, resources, receivedAt, weight }) => {
     const sampledAt = receivedAt ?? resources?.sampledAt ?? 0;
     if (
       !resources ||
@@ -79,14 +106,29 @@ export function chooseLoadBalancedEnvironment(
       resources.cpuUtilization === null ||
       resources.cpuUtilization >= 0.95 ||
       resources.totalMemoryBytes <= 0 ||
-      resources.cpuCount <= 0
+      resources.cpuCount <= 0 ||
+      resources.availableMemoryBytes / resources.totalMemoryBytes <= 0.05
     ) {
-      continue;
+      return [];
     }
-    const memoryAvailable = resources.availableMemoryBytes / resources.totalMemoryBytes;
-    if (memoryAvailable <= 0.05) continue;
-    const score =
-      weight * resources.cpuCount * (1 - resources.cpuUtilization) * resources.availableMemoryBytes;
+    return [
+      {
+        environmentId,
+        agentMark: resources.agentPerf?.agentMark ?? null,
+        capacity:
+          weight *
+          resources.cpuCount *
+          (1 - resources.cpuUtilization) *
+          resources.availableMemoryBytes,
+      },
+    ];
+  });
+  const unmeasuredMark =
+    median(usable.flatMap(({ agentMark }) => (agentMark === null ? [] : [agentMark]))) ?? 1;
+  let selected: string | null = null;
+  let bestScore = 0;
+  for (const { environmentId, agentMark, capacity } of usable) {
+    const score = capacity * (agentMark ?? unmeasuredMark);
     if (score > bestScore) {
       selected = environmentId;
       bestScore = score;

@@ -153,7 +153,6 @@ function commandThreadIds(command: OrchestrationV2Command): ReadonlyArray<Thread
     case "thread.unstore":
     case "thread.scenery.assign":
     case "thread.skills.set":
-    case "thread.subagent-policy.set":
     case "thread.metadata.update":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":

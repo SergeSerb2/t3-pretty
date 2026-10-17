@@ -289,22 +289,31 @@ export function useSidebarPeekPointerBinding(
 
   const onPointerLeave = useCallback(
     (event: ReactPointerEvent<Element>) => {
+      if (shouldIgnoreSidebarPeekLeave(event.currentTarget, event.relatedTarget)) {
+        onHoldRef.current();
+        return;
+      }
       const container = findSidebarPeekContainer(event.currentTarget);
-      const anchorRect = container ? sidebarPeekRectOf(container) : null;
+      const relatedSurface = isSidebarPeekSurfaceTarget(event.relatedTarget);
+      const anchorRect = container && !relatedSurface ? sidebarPeekRectOf(container) : null;
       const pointer = { x: event.clientX, y: event.clientY };
-      const action = resolveSidebarPeekLeave({
-        currentTarget: event.currentTarget,
-        relatedTarget: event.relatedTarget,
-        pointer,
-        anchor: anchorRect ? { left: anchorRect.left, top: anchorRect.top } : null,
-        // :hover is still true on the node being left. Hold only for a peek
-        // relatedTarget or a point that is still inside this rail's rects.
-        pointerOverSurface: pointerStillInsideSidebarPeek({
-          point: pointer,
-          rects: container ? readSidebarPeekHitRects(container) : [],
-          hovered: false,
-        }),
-      });
+      // Known surfaces need no measurement, but still need a watcher for a
+      // later move outside: that move may never leave this container again.
+      const action = relatedSurface
+        ? "hold"
+        : resolveSidebarPeekLeave({
+            currentTarget: event.currentTarget,
+            relatedTarget: event.relatedTarget,
+            pointer,
+            anchor: anchorRect ? { left: anchorRect.left, top: anchorRect.top } : null,
+            // :hover is still true on the node being left. Hold only for a
+            // point that is still inside this rail's rects.
+            pointerOverSurface: pointerStillInsideSidebarPeek({
+              point: pointer,
+              rects: container ? readSidebarPeekHitRects(container) : [],
+              hovered: false,
+            }),
+          });
       if (action === "ignore" || action === "hold") {
         // The pointer is still on a peek surface. Drop a close that a replaced
         // row already scheduled, and don't start another one.
@@ -314,11 +323,11 @@ export function useSidebarPeekPointerBinding(
       if (action === "hold" && container) {
         stopWatch();
         const onMove = (move: PointerEvent) => {
-          const overSurface = isSidebarPeekSurfaceTarget(move.target);
+          if (isSidebarPeekSurfaceTarget(move.target)) return;
           const inside = readSidebarPeekHitRects(container).some((rect) =>
             pointerInsideSidebarPeekRect({ x: move.clientX, y: move.clientY }, rect),
           );
-          if (overSurface || inside) return;
+          if (inside) return;
           stopWatch();
           onLeaveRef.current();
         };

@@ -1,15 +1,20 @@
 import {
   BearerConnectionTarget,
   PrimaryConnectionTarget,
+  AVAILABLE_CONNECTION_STATE,
+  type SupervisorConnectionState,
 } from "@t3tools/client-runtime/connection";
 import type { EnvironmentCatalogState } from "@t3tools/client-runtime/state/connections";
 import type { EnvironmentShellState } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createAllEnvironmentProjectSnapshotsReadyAtom } from "./shell";
+import {
+  createAllEnvironmentProjectSnapshotsReadyAtom,
+  createAllReachableShellsLiveAtom,
+} from "./shell";
 
 const LOCAL = EnvironmentId.make("local");
 const REMOTE = EnvironmentId.make("remote");
@@ -69,9 +74,79 @@ function makeHarness(requiresPrimaryEnvironment = true) {
     shellStateValueAtom: shells,
     requiresPrimaryEnvironment,
   });
+  const connections = Atom.family((_environmentId: EnvironmentId) =>
+    Atom.make<AsyncResult.AsyncResult<SupervisorConnectionState>>(
+      AsyncResult.success(AVAILABLE_CONNECTION_STATE),
+    ),
+  );
+  const reachable = createAllReachableShellsLiveAtom({
+    catalogValueAtom: catalog,
+    shellStateValueAtom: shells,
+    connectionStateAtom: connections,
+    requiresPrimaryEnvironment,
+  });
   const registry = AtomRegistry.make();
-  return { catalog, shells, ready, registry };
+  return { catalog, shells, connections, ready, reachable, registry };
 }
+
+describe("prompt-link shell readiness", () => {
+  it("settles a discovered empty remote-only catalog without clearing saved project scopes", () => {
+    const { catalog, reachable, ready, registry } = makeHarness(false);
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(catalog, catalogState([]));
+    expect(registry.get(reachable)).toBe(true);
+    expect(registry.get(ready)).toBe(false);
+    registry.dispose();
+  });
+
+  it("waits for local primary discovery, including when a remote snapshot is already live", () => {
+    const { catalog, shells, reachable, registry } = makeHarness();
+    registry.set(catalog, catalogState([]));
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(catalog, catalogState([REMOTE]));
+    registry.set(shells(REMOTE), shellState("live"));
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(catalog, catalogState([LOCAL, REMOTE]));
+    registry.set(shells(LOCAL), shellState("live"));
+    expect(registry.get(reachable)).toBe(true);
+    registry.dispose();
+  });
+
+  it("waits for reachable remote snapshots or their settled offline state", () => {
+    const { catalog, shells, connections, reachable, registry } = makeHarness(false);
+    registry.set(catalog, catalogState([REMOTE]));
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(shells(REMOTE), shellState("cached"));
+    registry.set(
+      connections(REMOTE),
+      AsyncResult.success({
+        ...AVAILABLE_CONNECTION_STATE,
+        desired: true,
+        phase: "backoff",
+        attempt: 2,
+      }),
+    );
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(
+      connections(REMOTE),
+      AsyncResult.success({
+        ...AVAILABLE_CONNECTION_STATE,
+        desired: true,
+        phase: "backoff",
+        attempt: 3,
+      }),
+    );
+    expect(registry.get(reachable)).toBe(true);
+    registry.set(
+      connections(REMOTE),
+      AsyncResult.success({ ...AVAILABLE_CONNECTION_STATE, phase: "connected" }),
+    );
+    expect(registry.get(reachable)).toBe(false);
+    registry.set(shells(REMOTE), shellState("live"));
+    expect(registry.get(reachable)).toBe(true);
+    registry.dispose();
+  });
+});
 
 describe("project snapshot readiness", () => {
   it("does not clear a saved scope while the ready catalog is still empty", () => {

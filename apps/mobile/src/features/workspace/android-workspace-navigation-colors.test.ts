@@ -107,4 +107,21 @@ describe("Android workspace navigation colors", () => {
     expect(colors.indicatorColor).toBe("#e091cf");
     expectVisibleSelection(colors);
   });
+
+  it.each([
+    { header: "#ffffff", secondary: "#000000", foreground: "#ffffff" },
+    { header: "#000000", secondary: "#ffffff", foreground: "#000000" },
+  ])("keeps labels and icons readable when the secondary fill opposes $header", (theme) => {
+    const variables = {
+      ...getMobileThemeRuntimeVariables("t3-code", "light", "android"),
+      "--color-header": theme.header,
+      "--color-screen": theme.header,
+      "--color-header-foreground": theme.secondary,
+      "--color-secondary": theme.secondary,
+      "--color-secondary-foreground": theme.foreground,
+    };
+    for (const rail of [false, true]) {
+      expectVisibleSelection(androidWorkspaceNavigationColors(variables, rail));
+    }
+  });
 });

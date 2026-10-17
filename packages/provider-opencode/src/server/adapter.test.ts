@@ -186,6 +186,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   const startTurn = (
     text = "hello",
     startProviderThread: OrchestrationV2ProviderThread = providerThread,
+    ordinal = 1,
   ) =>
     runtime.startTurn({
       appThread: {
@@ -213,9 +214,11 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
       },
       threadId,
       runId: RunId.make(`run-opencode-${suffix}`),
-      runOrdinal: 1,
-      providerTurnOrdinal: 1,
-      attemptId: RunAttemptId.make(`attempt-opencode-${suffix}`),
+      runOrdinal: ordinal,
+      providerTurnOrdinal: ordinal,
+      attemptId: RunAttemptId.make(
+        `attempt-opencode-${suffix}${ordinal === 1 ? "" : `-${ordinal}`}`,
+      ),
       rootNodeId: NodeId.make(`node-opencode-${suffix}`),
       providerThread: startProviderThread,
       message: {
@@ -501,6 +504,303 @@ describe("OpenCodeAdapterV2", () => {
         "children:child",
         "stream.close",
       ]);
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("rejects a stale Stop before aborting a settled turn's descendants", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const aborted: string[] = [];
+      let promptId = "";
+      const harness = yield* makeOpenCodeRuntimeHarness("stale-stop", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async (input: { messageID: string }) => {
+            promptId = input.messageID;
+            return { data: true };
+          },
+          get: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          messages: async () => ({ data: [] }),
+          children: async ({ sessionID }: { sessionID: string }) => ({
+            data: sessionID === "root" ? [{ id: "child" }] : [],
+          }),
+          abort: async ({ sessionID }: { sessionID: string }) => {
+            aborted.push(sessionID);
+            return { data: true };
+          },
+        },
+      });
+      yield* harness.startTurn();
+      const snapshot = yield* harness.runtime.readThreadSnapshot({
+        providerThread: harness.providerThread,
+      });
+      const terminal = yield* harness.runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, role: "user", time: { created: 1 } },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({ type: "session.idle", properties: { sessionID: "root" } }),
+      );
+      yield* Fiber.join(terminal);
+      const stale = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: ProviderTurnId.make("stale-turn"),
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.exit);
+      assert.isTrue(Exit.isFailure(stale));
+      assert.deepEqual(aborted, []);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: snapshot.providerTurns.at(-1)!.id,
+        requestRuntimeRestart: true,
+      });
+      assert.deepEqual(aborted, ["child"]);
+    }).pipe(
+      Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect.each([
+    { ownership: "known", status: "running" },
+    { ownership: "known", status: "completed" },
+    { ownership: "unknown", status: "running" },
+    { ownership: "unknown", status: "completed" },
+  ] as const)(
+    "stops older $ownership descendants without stopping newer $status work",
+    ({ ownership, status }) =>
+      Effect.gen(function* () {
+        const nativeEvents = asyncEventStream();
+        const aborted: string[] = [];
+        let promptId = "";
+        const harness = yield* makeOpenCodeRuntimeHarness(`owned-stop-${ownership}`, "root", {
+          event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+            promptAsync: async (input: { messageID: string }) => {
+              promptId = input.messageID;
+              return { data: true };
+            },
+            get: async ({ sessionID }: { sessionID: string }) => ({
+              data: {
+                id: sessionID,
+                ...(sessionID === "child" ? { parentID: "root" } : {}),
+                permission: [],
+                time: { created: 1, updated: 1 },
+              },
+            }),
+            update: async () => ({ data: { id: "child", parentID: "root" } }),
+            messages: async () => ({ data: [] }),
+            children: async ({ sessionID }: { sessionID: string }) => ({
+              data:
+                sessionID === "root"
+                  ? [{ id: "child" }, ...(ownership === "known" ? [{ id: "new-child" }] : [])]
+                  : [],
+            }),
+            abort: async ({ sessionID }: { sessionID: string }) => {
+              aborted.push(sessionID);
+              return { data: true };
+            },
+          },
+        });
+        const push = (event: unknown) => Effect.promise(() => nativeEvents.push(event));
+        const receipt = () =>
+          push({
+            type: "message.updated",
+            properties: {
+              sessionID: "root",
+              info: { id: promptId, sessionID: "root", role: "user", time: { created: 1 } },
+            },
+          });
+        const end = () => push({ type: "session.idle", properties: { sessionID: "root" } });
+        const terminal = () =>
+          harness.runtime.events.pipe(
+            Stream.filter((event) => event.type === "turn.terminal"),
+            Stream.runHead,
+            Effect.forkScoped,
+          );
+        yield* harness.startTurn();
+        const firstId = (yield* harness.runtime.readThreadSnapshot({
+          providerThread: harness.providerThread,
+        })).providerTurns.at(-1)!.id;
+        const firstEnded = yield* terminal();
+        yield* receipt();
+        if (ownership === "known")
+          yield* push({
+            type: "message.part.updated",
+            properties: {
+              sessionID: "root",
+              part: {
+                id: "old-task",
+                sessionID: "root",
+                messageID: "old-assistant",
+                type: "tool",
+                tool: "task",
+                callID: "old-call",
+                state: {
+                  status: "completed",
+                  input: { description: "Old task", prompt: "work", subagent_type: "general" },
+                  title: "Old task",
+                  metadata: { sessionId: "child", background: true },
+                  time: { start: 2, end: 2 },
+                  output: "started",
+                },
+              },
+            },
+          });
+        yield* end();
+        yield* Fiber.join(firstEnded);
+        yield* harness.startTurn("newer", harness.providerThread, 2);
+        const secondId = (yield* harness.runtime.readThreadSnapshot({
+          providerThread: harness.providerThread,
+        })).providerTurns.at(-1)!.id;
+        const secondEnded = yield* terminal();
+        yield* receipt();
+        if (ownership === "known")
+          yield* push({
+            type: "message.part.updated",
+            properties: {
+              sessionID: "root",
+              part: {
+                id: "new-task",
+                sessionID: "root",
+                messageID: "new-assistant",
+                type: "tool",
+                tool: "task",
+                callID: "new-call",
+                state: {
+                  status: "completed",
+                  input: { description: "New task", prompt: "work", subagent_type: "general" },
+                  title: "New task",
+                  metadata: { sessionId: "new-child", background: true },
+                  time: { start: 3, end: 3 },
+                  output: "started",
+                },
+              },
+            },
+          });
+        if (status === "completed") {
+          yield* end();
+          yield* Fiber.join(secondEnded);
+        }
+        const stopped = yield* harness.runtime
+          .interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: firstId,
+            requestRuntimeRestart: true,
+          })
+          .pipe(Effect.exit);
+        if (ownership === "known") {
+          assert.isTrue(Exit.isSuccess(stopped));
+          assert.deepEqual(aborted, ["child"]);
+        } else {
+          assert.isTrue(Exit.isFailure(stopped));
+          assert.deepEqual(aborted, []);
+        }
+        yield* harness.runtime.interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: secondId,
+          requestRuntimeRestart: true,
+        });
+        assert.isTrue(aborted.includes("child"));
+        if (ownership === "known") assert.isTrue(aborted.includes("new-child"));
+        assert.strictEqual(aborted.includes("root"), status === "running");
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
+  );
+
+  it.effect("admits the next prompt only after a settled parent's descendant Stop finishes", () =>
+    Effect.gen(function* () {
+      const nativeEvents = asyncEventStream();
+      const enumerating = promiseGate<void>();
+      const release = promiseGate<void>();
+      yield* Effect.addFinalizer(() => Effect.sync(() => release.resolve()));
+      const calls: string[] = [];
+      let promptId = "";
+      const harness = yield* makeOpenCodeRuntimeHarness("stop-admission", "root", {
+        event: { subscribe: async () => ({ stream: nativeEvents.stream }) },
+        session: {
+          create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          promptAsync: async (input: { messageID: string }) => {
+            promptId = input.messageID;
+            calls.push("prompt");
+            return { data: true };
+          },
+          get: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          messages: async () => ({ data: [] }),
+          children: async ({ sessionID }: { sessionID: string }) => {
+            if (sessionID === "root") {
+              enumerating.resolve();
+              await release.promise;
+              return { data: [{ id: "child" }] };
+            }
+            return { data: [] };
+          },
+          abort: async () => {
+            calls.push("abort");
+            return { data: true };
+          },
+        },
+      });
+      yield* harness.startTurn();
+      const id = (yield* harness.runtime.readThreadSnapshot({
+        providerThread: harness.providerThread,
+      })).providerTurns.at(-1)!.id;
+      const ended = yield* harness.runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({
+          type: "message.updated",
+          properties: {
+            sessionID: "root",
+            info: { id: promptId, sessionID: "root", role: "user", time: { created: 1 } },
+          },
+        }),
+      );
+      yield* Effect.promise(() =>
+        nativeEvents.push({ type: "session.idle", properties: { sessionID: "root" } }),
+      );
+      yield* Fiber.join(ended);
+      const stopping = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: id,
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.forkScoped);
+      yield* Effect.promise(() => enumerating.promise);
+      const starting = yield* harness
+        .startTurn("newer", harness.providerThread, 2)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      try {
+        assert.deepEqual(calls, ["prompt"]);
+      } finally {
+        release.resolve();
+      }
+      yield* Fiber.join(stopping);
+      yield* Fiber.join(starting);
+      assert.deepEqual(calls, ["prompt", "abort", "prompt"]);
     }).pipe(
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,

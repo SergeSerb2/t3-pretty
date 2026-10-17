@@ -1,3 +1,4 @@
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
@@ -70,7 +71,7 @@ export function GitHubRoutingSettings() {
                     {entry.target.label}
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-                    {connectionCatalogDisplayUrl(entry) ?? "T3 Connect"}
+                    {connectionCatalogDisplayUrl(entry) ?? CONNECT_BRANDING.connectName}
                   </Text>
                 </View>
                 <Text className="text-sm text-foreground-muted">

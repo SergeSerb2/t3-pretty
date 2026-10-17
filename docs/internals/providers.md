@@ -119,6 +119,13 @@ Ownership is cached per instance and re-read immediately before an update runs. 
 changed since the advisory, and reports success only when the refreshed provider is still installed
 with a readable, current version.
 
+The runner lives for the server's lifetime, and automatic and manual updates share it. Its locks
+are per instance and per installer. A runner built per connection would let two clients run one
+installer at the same time. The [auto-updater](../../apps/server/src/provider/ProviderAutoUpdater.ts)
+has no cross-machine coordinator: environments converge because each polls the same registries.
+It marks a failed state `automatic`, and clients keep flagging that state after an app restart,
+because nobody may have watched the attempt.
+
 ## Protocol traps
 
 Codex async questions arrive as notifications and are answered with a new user message. There is

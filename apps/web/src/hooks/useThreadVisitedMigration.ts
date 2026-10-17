@@ -43,3 +43,12 @@ export function useThreadVisitedMigration(): void {
     }
   }, [threads, visitThreadMutation]);
 }
+
+/**
+ * Renders nothing. Mounting the migration as its own component keeps its
+ * subscription to every thread shell from re-rendering the app layout.
+ */
+export function ThreadVisitedMigration(): null {
+  useThreadVisitedMigration();
+  return null;
+}

@@ -1596,7 +1596,6 @@ export function threadShellFromProjection(
     ).length,
     scenery: projection.thread.scenery ?? null,
     enabledSkillIds: projection.thread.enabledSkillIds ?? [],
-    subagentPolicy: projection.thread.subagentPolicy ?? null,
     automationRun: projection.thread.automationRun ?? null,
     settledOverride: projection.thread.settledOverride,
     settledAt: projection.thread.settledAt,
@@ -1860,7 +1859,6 @@ function shellFromState(input: {
     activeSubagentCount: input.state.activeSubagentCount,
     scenery: input.state.thread.scenery ?? null,
     enabledSkillIds: input.state.thread.enabledSkillIds ?? [],
-    subagentPolicy: input.state.thread.subagentPolicy ?? null,
     automationRun: input.state.thread.automationRun ?? null,
     settledOverride: input.state.thread.settledOverride,
     settledAt: input.state.thread.settledAt,
@@ -3618,8 +3616,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const getLimitRecoveryCandidates = Effect.fn("ProjectionStore.getLimitRecoveryCandidates")(
       function* (options: Parameters<ProjectionStoreV2Shape["getLimitRecoveryCandidates"]>[0]) {
-        // Indexed latest-run and root-error lookups avoid reading run histories,
-        // counting transcript items, or walking fork ancestors on scheduler ticks.
+        // Start with the partial failed-error index so idle ticks do not walk
+        // every thread. Latest-run and root-error lookups then check eligibility.
         const rows = yield* sql<{
           readonly payload_json: string;
           readonly run_id: string;
@@ -3662,7 +3660,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             ORDER BY error.updated_at DESC, error.ordinal DESC, error.turn_item_id DESC
             LIMIT 1
           )
-          WHERE t.deleted_at IS NULL
+          WHERE t.thread_id IN (
+              SELECT limited.thread_id FROM orchestration_v2_projection_turn_items limited
+              WHERE limited.type = 'error' AND limited.status = 'failed'
+                AND json_extract(limited.payload_json, '$.failure.class') = 'usage_limit'
+                AND json_extract(limited.payload_json, '$.failure.resetAt') IS NOT NULL
+            )
+            AND t.deleted_at IS NULL
             AND json_extract(t.payload_json, '$.archivedAt') IS NULL
             AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'
             AND json_extract(item.payload_json, '$.failure.class') = 'usage_limit'

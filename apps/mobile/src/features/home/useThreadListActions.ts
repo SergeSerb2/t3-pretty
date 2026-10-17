@@ -782,7 +782,9 @@ export function useThreadListActions(): {
   );
   const renameThread = useCallback(
     (thread: EnvironmentThreadShell) => {
+      if (!checkThreadOperationPermission(thread, "Could not rename thread")) return;
       const commit = (title: string) => {
+        if (!checkThreadOperationPermission(thread, "Could not rename thread")) return;
         const resolution = resolveThreadTitleRename({ title, originalTitle: thread.title });
         if (resolution.action === "reject-empty") {
           Alert.alert("Could not rename thread", "Thread title cannot be empty.");

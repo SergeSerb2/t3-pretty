@@ -270,7 +270,7 @@ describe("update capsule", () => {
         { status: "waiting" },
         1_200,
       ),
-    ).toEqual({ tone: "default", label: "Restart in 4s", action: "later" });
+    ).toEqual({ tone: "default", label: "Restart in 4s", compactLabel: "4s", action: "later" });
   });
 
   it("names the slowest machine once it passes the slow threshold", () => {
@@ -282,12 +282,14 @@ describe("update capsule", () => {
     expect(describeUpdateCapsule(run(), machines, null, 60_000)).toEqual({
       tone: "default",
       label: "1 of 3 updated",
+      compactLabel: "1/3",
       action: null,
     });
     expect(describeUpdateCapsule(run(), machines, null, UPDATE_SLOW_AFTER_MS + 6 * 60_000)).toEqual(
       {
         tone: "slow",
         label: "alvin",
+        compactLabel: "1/3",
         slow: { status: "restarting", elapsed: "9m" },
         action: null,
       },
@@ -298,6 +300,7 @@ describe("update capsule", () => {
     expect(describeUpdateCapsule(run(), [view("alvin", "failed")], null, 0)).toEqual({
       tone: "failed",
       label: "alvin failed",
+      compactLabel: "1",
       action: "retry",
     });
     expect(
@@ -307,7 +310,38 @@ describe("update capsule", () => {
         null,
         0,
       ),
-    ).toEqual({ tone: "failed", label: "2 failed", action: "dismiss" });
+    ).toEqual({ tone: "failed", label: "2 failed", compactLabel: "2", action: "dismiss" });
+  });
+
+  it("keeps waiting machines in rail progress until their update completes", () => {
+    const machines = [view("alvin", "done"), view("box", "waiting")];
+    expect(describeUpdateCapsule(run(), machines, null, 0)).toMatchObject({
+      label: "1 of 2 updated",
+      compactLabel: "1/2",
+      action: null,
+    });
+    expect(
+      describeUpdateCapsule(run(), [view("alvin", "done"), view("box", "done")], null, 0),
+    ).toMatchObject({ label: "2 of 2 updated", compactLabel: "2/2" });
+  });
+
+  it.each([
+    [null, "Downloading", "…"],
+    [47.8, "Downloading 47%", "47%"],
+  ])("shows local download progress in the rail (%s)", (percent, label, compactLabel) => {
+    expect(describeUpdateCapsule(run(), [], { status: "downloading", percent }, 0)).toMatchObject({
+      label,
+      compactLabel,
+      action: null,
+    });
+  });
+
+  it("keeps the rail status short while the app restarts", () => {
+    expect(describeUpdateCapsule(run({ phase: "installing" }), [], null, 0)).toMatchObject({
+      label: "Restarting…",
+      compactLabel: "…",
+      action: null,
+    });
   });
 
   it("ends the run only when every machine is done and this app is not installing", () => {

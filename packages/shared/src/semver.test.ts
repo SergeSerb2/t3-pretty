@@ -2,12 +2,30 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   compareSemverVersions,
+  isStableReleaseVersion,
   normalizeSemverVersion,
   parseSemver,
   satisfiesSemverRange,
 } from "./semver.ts";
 
 describe("semver helpers", () => {
+  it.each([
+    ["0.0.0", true],
+    ["1.2.3", true],
+    ["10.20.300", true],
+    ["1.2", false],
+    ["v1.2.3", false],
+    ["01.2.3", false],
+    ["1.2.3-beta.1", false],
+    ["1.2.3-preview.20261016.1", false],
+    ["1.2.3-nightly.20261016.1", false],
+    ["1.2.3-pr.955", false],
+    ["1.2.3+build", false],
+    ["", false],
+  ])("recognizes only numeric stable release versions: %s", (version, stable) => {
+    expect(isStableReleaseVersion(version)).toBe(stable);
+  });
+
   it("matches supported range groups", () => {
     const range = "^22.16 || ^23.11 || >=24.10";
 

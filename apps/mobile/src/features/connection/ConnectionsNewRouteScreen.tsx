@@ -1,4 +1,5 @@
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { CONNECT_BRANDING } from "@t3tools/shared/connectBranding";
 import { useAuth } from "@clerk/expo";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
@@ -529,13 +530,13 @@ function T3ConnectSection() {
           onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
           className={cn(
             "min-h-13 flex-row items-center gap-3 rounded-[26px] border-continuous px-4 active:opacity-70",
-            glass
-              ? "border-[0.5px] border-chrome-glass-border bg-foreground/5"
-              : "bg-grouped-card",
+            glass ? "border-[0.5px] border-chrome-glass-border bg-foreground/5" : "bg-grouped-card",
           )}
         >
           <View className="min-w-0 flex-1 py-3">
-            <Text className="text-base text-foreground">Sign in to T3 Connect</Text>
+            <Text className="text-base text-foreground">
+              Sign in to {CONNECT_BRANDING.connectName}
+            </Text>
             <Text className="text-sm text-foreground-muted">
               Reach your machines from anywhere, no network setup.
             </Text>

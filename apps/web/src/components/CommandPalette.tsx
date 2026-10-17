@@ -1,5 +1,8 @@
 "use client";
 
+import { openThreadShareDialog } from "./ThreadShareDialog";
+import { readEnvironmentSupportsThreadSharing } from "../state/entities";
+
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -1952,6 +1955,20 @@ function OpenCommandPaletteDialog(props: {
         });
       }
     }
+  }
+
+  if (activeThread !== null && readEnvironmentSupportsThreadSharing(activeThread.environmentId)) {
+    actionItems.push({
+      kind: "action",
+      value: "action:share-thread",
+      searchTerms: ["share", "public", "conversation", "snapshot", "link"],
+      title: "Share thread publicly",
+      icon: <LinkIcon className={ITEM_ICON_CLASS} />,
+      disabled: !readEnvironmentScope(activeThread.environmentId, AuthOrchestrationOperateScope),
+      run: async () => {
+        openThreadShareDialog(scopeThreadRef(activeThread.environmentId, activeThread.id));
+      },
+    });
   }
 
   if (activeThreadReferenceCopyTarget !== null) {

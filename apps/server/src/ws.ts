@@ -1,3 +1,4 @@
+import * as ThreadSharing from "./sharing/ThreadSharing.ts";
 import * as ProjectTransfer from "./project/ProjectTransfer.ts";
 import { importProjectFavicon } from "./project/ProjectFaviconStore.ts";
 import { AgentInstructionFiles } from "./instructions/AgentInstructionFiles.ts";
@@ -242,6 +243,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
+import * as AgentPerfBenchmark from "./agentPerf/AgentPerfBenchmark.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as StorageInventoryService from "./storage/StorageInventoryService.ts";
@@ -1276,6 +1278,7 @@ const layerWsRpc = (
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+      const threadSharing = yield* ThreadSharing.ThreadSharing;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -1384,6 +1387,7 @@ const layerWsRpc = (
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const hostResources = yield* HostResources.HostResources;
+      const agentPerf = yield* AgentPerfBenchmark.AgentPerfBenchmark;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
@@ -2173,9 +2177,6 @@ const layerWsRpc = (
                     ...(input.enabledSkillIds === undefined
                       ? {}
                       : { enabledSkillIds: input.enabledSkillIds }),
-                    ...(input.subagentPolicy === undefined
-                      ? {}
-                      : { subagentPolicy: input.subagentPolicy }),
                     ...(input.automationRun === undefined
                       ? {}
                       : { automationRun: input.automationRun }),
@@ -2261,6 +2262,9 @@ const layerWsRpc = (
               Effect.andThen(subscribeOrchestrationV2Thread(input)),
             ),
           ),
+        [WS_METHODS.threadShareGet]: (input) => threadSharing.get(input),
+        [WS_METHODS.threadSharePublish]: (input) => threadSharing.publish(input),
+        [WS_METHODS.threadShareRevoke]: (input) => threadSharing.revoke(input),
         [WS_METHODS.scheduledTasksList]: (_input) =>
           scheduledTasks.list().pipe(Effect.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
@@ -2635,7 +2639,11 @@ const layerWsRpc = (
           }),
         [WS_METHODS.serverGetAgentMonitoringStatus]: (_input) => agentMonitoring.status,
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) => processDiagnostics.read,
-        [WS_METHODS.serverGetHostResources]: (_input) => hostResources.read,
+        // The score rides along so load balancing reads both in one request.
+        [WS_METHODS.serverGetHostResources]: (_input) =>
+          Effect.zipWith(hostResources.read, agentPerf.status, (resources, score) =>
+            score === null ? resources : { ...resources, agentPerf: score },
+          ),
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           processResourceMonitor.readHistory(input),
         [WS_METHODS.serverGetResourceTelemetryHistory]: (input) =>
@@ -3423,6 +3431,7 @@ const layerWsRoute = Layer.unwrap(
     const secretRequestBroker = yield* SecretRequestBroker.SecretRequestBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
+    const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const sql = yield* SqlClient.SqlClient;
@@ -3486,7 +3495,13 @@ const layerWsRoute = Layer.unwrap(
               Layer.provide(DefectReporter.layer),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(AgentSessionScanner.layer),
-              Layer.provide(ProviderMaintenanceRunner.layer),
+              // Server-lifetime, so concurrent clients and automatic updates share its locks.
+              Layer.provide(
+                Layer.succeed(
+                  ProviderMaintenanceRunner.ProviderMaintenanceRunner,
+                  providerMaintenanceRunner,
+                ),
+              ),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // Captured at layer build like the preview broker: the per-connection RPC layer
               // does not see makeRoutesLayer's services, so a request-time lookup fails the upgrade.

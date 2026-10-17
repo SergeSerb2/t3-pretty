@@ -135,6 +135,10 @@
       "types": "./src/Struct.ts",
       "import": "./src/Struct.ts"
     },
+    "./sidebarProjectLayout": {
+      "types": "./src/sidebarProjectLayout.ts",
+      "import": "./src/sidebarProjectLayout.ts"
+    },
     "./serverSettings": {
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"

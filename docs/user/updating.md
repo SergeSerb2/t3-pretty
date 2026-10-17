@@ -147,6 +147,21 @@ directory and pair with the running server.
 at once. Hover it to see which providers it will update. Providers that only
 offer a manual update command are not included.
 
+Each machine also updates its providers on its own, so all your machines stay
+on the same version. When a provider has a new release, the machine installs it
+as soon as no agent is using that provider. This works with no app open. To turn
+it off, use **Settings → General → Update providers automatically**. The setting
+applies to every connected machine and needs **Provider update checks**.
+
+If an automatic update fails, the sidebar names the provider and the machine.
+T3 Code tries the same release again after 1 hour, then after 4 hours, then once
+a day. It tries again at once when a newer release comes out. The notice stays,
+even after you restart the app, until an update succeeds. To retry now, use
+**Update now** on the provider card.
+
+Automatic updates include only providers that have **Update now**. T3 Code does
+not install a release that is known to cause problems with your version of T3 Code.
+
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and
@@ -157,8 +172,8 @@ the machine instead.
 
 The same page lets you refresh provider status and update supported providers.
 These controls require a connected environment and permission to operate it.
-Provider update checks and restart continuation preferences are in
-**Settings → Maintenance**. If provider update checks are disabled, enable them
+Provider update checks, automatic provider updates, and restart continuation
+preferences are in **Settings → Maintenance**. If provider update checks are disabled, enable them
 there before refreshing to find newer versions. The same setting controls whether
 T3 Code downloads model catalog updates, so with it off new models may not appear
 until you enable it and refresh provider status.

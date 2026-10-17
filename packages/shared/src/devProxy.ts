@@ -14,6 +14,7 @@ export const DEV_PROXIED_PATH_PREFIXES = [
   "/.well-known",
   "/ws",
   "/hooks",
+  "/share",
   "/mcp",
 ] as const;
 

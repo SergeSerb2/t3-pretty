@@ -39,7 +39,6 @@ import {
   type SetThreadInteractionModeInput,
   type SetThreadRuntimeModeInput,
   type SetThreadSkillsInput,
-  type SetThreadSubagentPolicyInput,
   type PinThreadInput,
   type ReorderPinnedThreadInput,
   type ReorderActiveThreadInput,
@@ -80,7 +79,6 @@ import {
   setThreadInteractionMode,
   setThreadRuntimeMode,
   setThreadSkills,
-  setThreadSubagentPolicy,
   pinThread,
   reorderPinnedThread,
   reorderActiveThread,
@@ -130,7 +128,6 @@ export type {
   SetThreadInteractionModeInput,
   SetThreadRuntimeModeInput,
   SetThreadSkillsInput,
-  SetThreadSubagentPolicyInput,
   PinThreadInput,
   ReorderPinnedThreadInput,
   ReorderActiveThreadInput,
@@ -164,6 +161,24 @@ export function createThreadEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.threadId]),
   };
   const commands = {
+    getShare: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread-share:get",
+      tag: WS_METHODS.threadShareGet,
+      scheduler,
+      concurrency,
+    }),
+    publishShare: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread-share:publish",
+      tag: WS_METHODS.threadSharePublish,
+      scheduler,
+      concurrency,
+    }),
+    revokeShare: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread-share:revoke",
+      tag: WS_METHODS.threadShareRevoke,
+      scheduler,
+      concurrency,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:create",
       execute: (input: CreateThreadInput) => createThread(input),
@@ -311,12 +326,6 @@ export function createThreadEnvironmentAtoms<R, E>(
     setThreadSkills: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-thread-skills",
       execute: (input: SetThreadSkillsInput) => setThreadSkills(input),
-      scheduler,
-      concurrency,
-    }),
-    setThreadSubagentPolicy: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:set-thread-subagent-policy",
-      execute: (input: SetThreadSubagentPolicyInput) => setThreadSubagentPolicy(input),
       scheduler,
       concurrency,
     }),

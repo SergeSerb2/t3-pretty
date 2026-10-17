@@ -14,7 +14,8 @@ final class T3LayoutMetricsView: ExpoView {
     registerForTraitChanges([UITraitHorizontalSizeClass.self, UITraitVerticalSizeClass.self]) { (view: T3LayoutMetricsView, _: UITraitCollection) in
       view.publishMetrics()
     }
-    #if compiler(>=6.4)
+    // Xcode 27.0 also has Swift 6.4, but only UIKit from the 27.1 SDK has these APIs.
+    #if canImport(UIKit, _version: 9127.0.85)
     if #available(iOS 27.1, *) {
       // Stay `false` until the hinge interaction reports one. Nil blocked
       // publishMetrics on phones where UIHingeInteraction never fires, which
@@ -69,7 +70,7 @@ final class T3LayoutMetricsView: ExpoView {
     }
     var verticalBarEdge = "none"
     var regions: [[String: Any]] = []
-    #if compiler(>=6.4)
+    #if canImport(UIKit, _version: 9127.0.85)
     if #available(iOS 27.1, *) {
       let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
       switch traitCollection.verticalBarEdge {

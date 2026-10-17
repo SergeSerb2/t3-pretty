@@ -1583,10 +1583,7 @@ function SavedBackendListRow({
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
           <Tooltip>
-            {/* The status can change while the tooltip is open, and base-ui only
-                re-measures the popup when the trigger's payload changes. */}
             <TooltipTrigger
-              payload={statusTooltip}
               render={
                 <span
                   className={cn(
@@ -3479,7 +3476,6 @@ export function ConnectionsSettings() {
 
   const primarySettings = (
     <>
-      <SurgeConnectAccountSection />
       {primaryEnvironmentId !== null ? (
         <>
           <SettingsSection
@@ -3935,7 +3931,8 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
-      {primarySettings}
+      <SurgeConnectAccountSection />
+      {primaryEnvironmentId === null ? primarySettings : null}
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"

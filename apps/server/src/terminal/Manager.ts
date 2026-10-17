@@ -49,7 +49,9 @@ import { mergePathEntries } from "@t3tools/shared/shell";
 import { acpRegistryManagedBinaryDirectories } from "@t3tools/provider-acp-registry/server";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Equal from "effect/Equal";
@@ -100,6 +102,8 @@ const DEFAULT_HISTORY_BYTE_LIMIT = 8 * 1024 * 1024;
 const MAX_HISTORY_CHUNK_LENGTH = 16 * 1024;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 250;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_SUBPROCESS_IDLE_POLL_INTERVAL_MS = 10_000;
+const SUBPROCESS_RECENT_ACTIVITY_MS = 30_000;
 const MAX_SUBPROCESS_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
@@ -1382,6 +1386,7 @@ interface TerminalManagerOptions {
     TerminalSubprocessCheckError
   >;
   subprocessPollIntervalMs?: number;
+  subprocessIdlePollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
   registerTerminalProcesses?: (input: {
@@ -1482,6 +1487,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const clock = yield* Clock.Clock;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
@@ -1576,6 +1582,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         );
   const subprocessPollIntervalMs =
     options.subprocessPollIntervalMs ?? DEFAULT_SUBPROCESS_POLL_INTERVAL_MS;
+  const subprocessIdlePollIntervalMs = Math.max(
+    subprocessPollIntervalMs,
+    options.subprocessIdlePollIntervalMs ?? DEFAULT_SUBPROCESS_IDLE_POLL_INTERVAL_MS,
+  );
+  let lastTerminalActivityAtMs = -Infinity;
+  let subprocessPollWake = Deferred.makeUnsafe<void>();
+  const recordTerminalActivity = () => {
+    lastTerminalActivityAtMs = clock.currentTimeMillisUnsafe();
+    Deferred.doneUnsafe(subprocessPollWake, Effect.void);
+  };
   const processKillGraceMs = options.processKillGraceMs ?? DEFAULT_PROCESS_KILL_GRACE_MS;
   const maxRetainedInactiveSessions =
     options.maxRetainedInactiveSessions ?? DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS;
@@ -2320,6 +2336,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
               session.status = "running";
               // onExit may replay an exit immediately; accept it before subscribing.
               session.unsubscribeData = spawnResult.process.onData((data) => {
+                recordTerminalActivity();
                 if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
                   return;
                 }
@@ -2344,6 +2361,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             });
             // Publish startup before draining any events replayed during subscription.
             eventsActivated = true;
+            recordTerminalActivity();
             if (session.processEventDrainRunning) runFork(drainProcessEvents(session, processPid));
           }),
         ),
@@ -2546,6 +2564,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     ),
   );
 
+  const waitForSubprocessPoll = Effect.fnUntraced(function* (delayMs: number) {
+    const wake = (subprocessPollWake = Deferred.makeUnsafe<void>());
+    const state = yield* readManagerState;
+    const idle =
+      clock.currentTimeMillisUnsafe() - lastTerminalActivityAtMs >= SUBPROCESS_RECENT_ACTIVITY_MS &&
+      ![...state.sessions.values()].some(
+        (session) => session.status === "running" && session.hasRunningSubprocess,
+      );
+    if (!idle || delayMs >= subprocessIdlePollIntervalMs) {
+      return yield* Effect.sleep(delayMs);
+    }
+    // PTY traffic wakes an idle wait; it never adds polls to the active cadence.
+    yield* Effect.raceFirst(Effect.sleep(subprocessIdlePollIntervalMs), Deferred.await(wake));
+  });
+
   let subprocessSnapshotFailureCount = 0;
   yield* Effect.forever(
     hasRunningSessions.pipe(
@@ -2560,7 +2593,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                   subprocessPollIntervalMs,
                   subprocessSnapshotFailureCount,
                 );
-                return Effect.sleep(delayMs);
+                return waitForSubprocessPoll(delayMs);
               }),
             )
           : Effect.sync(() => {
@@ -3000,6 +3033,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           cause,
         }),
     });
+    recordTerminalActivity();
   });
 
   const resizeLocked = Effect.fn("terminal.resize")(function* (input: TerminalResizeInput) {

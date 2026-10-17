@@ -31,6 +31,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as References from "effect/References";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -685,8 +686,10 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     model: { id: "big-pickle", providerID: "opencode", variant: "default" },
   });
   /** A turn whose model launched a background subagent that still runs. */
-  const backgroundLaunch = (child: string): ReadonlyArray<ProviderReplayEntry> => {
-    const call = "call-background";
+  const backgroundLaunch = (
+    child: string,
+    call = "call-background",
+  ): ReadonlyArray<ProviderReplayEntry> => {
     const tool = { sessionID: SESSION, assistantMessageID: "msg_assistant", id: call };
     return [
       out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -783,6 +786,259 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.equal((yield* watch.terminal)?.status, "interrupted");
       assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
     }).pipe(Effect.scoped),
+  );
+
+  it.effect.each(["running", "completed"] as const)(
+    "ignores a stale Stop before stopping a newer %s turn's background subagents",
+    (status) =>
+      Effect.gen(function* () {
+        const { runtime, thread } = yield* resumed([
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          ...backgroundLaunch(CHILD),
+          ...(status === "completed"
+            ? [event("session.execution.succeeded", { sessionID: SESSION })]
+            : []),
+          out("session.interrupt", { sessionID: CHILD }),
+          reply("session.interrupt", { interrupted: true }),
+          ...(status === "running"
+            ? [
+                out("session.interrupt", { sessionID: SESSION }),
+                reply("session.interrupt", { interrupted: true }),
+                event("session.execution.interrupted", { sessionID: SESSION }),
+              ]
+            : []),
+        ]);
+        const firstTerminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        yield* Fiber.join(firstTerminal);
+        const watch = yield* watchBackgroundTurn(runtime);
+        const newer = {
+          ...withLineage(thread),
+          runId: RunId.make("run:opencode2-adapter:newer"),
+          runOrdinal: 2,
+          providerTurnOrdinal: 2,
+          attemptId: RunAttemptId.make("attempt:opencode2-adapter:newer"),
+        };
+        yield* runtime.startTurn(newer);
+        yield* watch.attached;
+        if (status === "completed") yield* watch.terminal;
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: yield* providerTurnId,
+          requestRuntimeRestart: true,
+        });
+        assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+        const newerId = yield* Effect.gen(function* () {
+          const ids = yield* IdAllocator.IdAllocatorV2;
+          return ids.derive.providerTurn({
+            driver: OPENCODE_PROVIDER,
+            nativeTurnId: `${SESSION}:attempt:${newer.attemptId}`,
+          });
+        }).pipe(Effect.provide(IdAllocator.layer));
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: newerId,
+          requestRuntimeRestart: true,
+        });
+        if (status === "running") yield* watch.terminal;
+        assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.each(["running", "completed"] as const)(
+    "stops older owned background work while a newer %s turn keeps its own child",
+    (status) =>
+      Effect.gen(function* () {
+        const CHILD_B = "ses_f1485c529ffeBBBBBBBBBBBBBB";
+        const { runtime, thread } = yield* resumed([
+          ...backgroundLaunch(CHILD, "call-old"),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("session.update", { sessionID: CHILD, permissions: "<any>" }),
+          reply("session.update", null),
+          ...backgroundLaunch(CHILD_B, "call-new"),
+          ...(status === "completed"
+            ? [event("session.execution.succeeded", { sessionID: SESSION })]
+            : []),
+          out("session.interrupt", { sessionID: CHILD }),
+          reply("session.interrupt", { interrupted: true }),
+          out("session.interrupt", { sessionID: CHILD_B }),
+          reply("session.interrupt", { interrupted: true }),
+          ...(status === "running"
+            ? [
+                out("session.interrupt", { sessionID: SESSION }),
+                reply("session.interrupt", { interrupted: true }),
+                event("session.execution.interrupted", { sessionID: SESSION }),
+              ]
+            : []),
+        ]);
+        const firstEnded = yield* Deferred.make<void>();
+        const secondEnded = yield* Deferred.make<void>();
+        const newerAttached = yield* Deferred.make<void>();
+        const olderStopped = yield* Deferred.make<void>();
+        const collected: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        let terminals = 0;
+        yield* runtime.events.pipe(
+          Stream.runForEach((entry) =>
+            Effect.gen(function* () {
+              collected.push(entry);
+              if (entry.type === "turn.terminal")
+                yield* Deferred.succeed(++terminals === 1 ? firstEnded : secondEnded, undefined);
+              if (entry.type === "subagent.updated") {
+                if (
+                  entry.subagent.nativeTaskRef?.nativeId === "call-new" &&
+                  entry.subagent.childThreadId !== null
+                )
+                  yield* Deferred.succeed(newerAttached, undefined);
+                if (
+                  entry.subagent.nativeTaskRef?.nativeId === "call-old" &&
+                  entry.subagent.status === "interrupted"
+                )
+                  yield* Deferred.succeed(olderStopped, undefined);
+              }
+            }),
+          ),
+          Effect.forkScoped,
+        );
+        yield* runtime.startTurn(withLineage(thread));
+        yield* Deferred.await(firstEnded);
+        const newer = {
+          ...withLineage(thread),
+          runId: RunId.make("run:opencode2-adapter:newer"),
+          runOrdinal: 2,
+          providerTurnOrdinal: 2,
+          attemptId: RunAttemptId.make("attempt:opencode2-adapter:newer"),
+        };
+        yield* runtime.startTurn(newer);
+        yield* Deferred.await(newerAttached);
+        if (status === "completed") yield* Deferred.await(secondEnded);
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: yield* providerTurnId,
+          requestRuntimeRestart: true,
+        });
+        yield* Deferred.await(olderStopped);
+        assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+        assert.isFalse(
+          collected.some(
+            (entry) =>
+              entry.type === "subagent.updated" &&
+              entry.subagent.nativeTaskRef?.nativeId === "call-new" &&
+              entry.subagent.status === "interrupted",
+          ),
+        );
+        const newerId = (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
+          driver: OPENCODE_PROVIDER,
+          nativeTurnId: `${SESSION}:attempt:${newer.attemptId}`,
+        });
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: newerId,
+          requestRuntimeRestart: true,
+        });
+        if (status === "running") yield* Deferred.await(secondEnded);
+        assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+      }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
+  );
+
+  it.effect.each(["running", "completed"] as const)(
+    "leaves a newer turn's %s background report for its own Stop",
+    (status) =>
+      Effect.gen(function* () {
+        const offered =
+          yield* Queue.unbounded<ProviderContinuationRequests.ProviderContinuationRequest>();
+        const { runtime, thread } = yield* resumed([
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          ...backgroundLaunch(CHILD),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          event("session.execution.succeeded", { sessionID: CHILD }),
+          event("session.inbox.enqueued", {
+            inboxID: "msg_newer_report",
+            sessionID: SESSION,
+            item: {
+              type: "synthetic",
+              payload: {
+                text: "Newer child finished",
+                description: "Sleep",
+                metadata: {
+                  source: "subagent",
+                  childID: CHILD,
+                  agent: "General",
+                  state: "completed",
+                },
+              },
+              delivery: "steer",
+            },
+          }),
+          event("session.execution.started", { sessionID: SESSION }),
+          ...(status === "completed"
+            ? [
+                event("session.execution.succeeded", { sessionID: SESSION }),
+                event("session.model.selected", {
+                  sessionID: SESSION,
+                  model: { providerID: "opencode", id: "big-pickle", variant: "report-finished" },
+                }),
+              ]
+            : []),
+          ...(status === "running"
+            ? [
+                out("session.interrupt", { sessionID: SESSION }),
+                reply("session.interrupt", { interrupted: true }),
+                event("session.execution.interrupted", { sessionID: SESSION }),
+              ]
+            : []),
+        ]).pipe(
+          Effect.provideService(ProviderContinuationRequests.ProviderContinuationRequests, {
+            offer: (request) => Queue.offer(offered, request),
+            take: Effect.never,
+          }),
+        );
+        const firstTerminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(withLineage(thread));
+        yield* Fiber.join(firstTerminal);
+        const newer = {
+          ...withLineage(thread),
+          runId: RunId.make("run:opencode2-adapter:newer"),
+          runOrdinal: 2,
+          providerTurnOrdinal: 2,
+          attemptId: RunAttemptId.make("attempt:opencode2-adapter:newer"),
+        };
+        const secondTerminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(newer);
+        yield* Fiber.join(secondTerminal);
+        const report = yield* Queue.take(offered);
+        if (status === "completed")
+          yield* runtime.events.pipe(
+            Stream.filter(
+              (entry) =>
+                entry.type === "provider_thread.updated" &&
+                entry.providerThread.nativeMetadata?.modelSelection?.options?.[0]?.value ===
+                  "report-finished",
+            ),
+            Stream.runHead,
+          );
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: yield* providerTurnId,
+          requestRuntimeRestart: true,
+        });
+        assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+        assert.isTrue(Option.isSome(yield* report.dispatchIfCurrent!(Effect.succeed("run"))));
+        const newerId = (yield* IdAllocator.IdAllocatorV2).derive.providerTurn({
+          driver: OPENCODE_PROVIDER,
+          nativeTurnId: `${SESSION}:attempt:${newer.attemptId}`,
+        });
+        yield* runtime.interruptTurn({
+          providerThread: thread,
+          providerTurnId: newerId,
+          requestRuntimeRestart: true,
+        });
+        assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+        assert.isTrue(Option.isNone(yield* report.dispatchIfCurrent!(Effect.succeed("run"))));
+      }).pipe(Effect.scoped, Effect.provide(IdAllocator.layer)),
   );
 
   it.effect("stops background subagents on a user Stop", () =>

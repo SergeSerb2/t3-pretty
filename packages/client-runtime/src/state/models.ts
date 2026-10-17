@@ -134,7 +134,6 @@ export interface EnvironmentThreadShell {
   readonly storedAt: string | null;
   readonly scenery: OrchestrationV2ThreadShell["scenery"];
   readonly enabledSkillIds: NonNullable<OrchestrationV2ThreadShell["enabledSkillIds"]>;
-  readonly subagentPolicy: OrchestrationV2ThreadShell["subagentPolicy"];
   readonly automationRun: OrchestrationV2ThreadShell["automationRun"];
   readonly liveHeadline: OrchestrationV2ThreadShell["liveHeadline"];
   readonly planProgress: OrchestrationV2ThreadShell["planProgress"];
@@ -293,7 +292,6 @@ export function presentThreadShell(
     storedAt: nullableIso(thread.storedAt ?? null),
     scenery: thread.scenery,
     enabledSkillIds: thread.enabledSkillIds ?? [],
-    subagentPolicy: thread.subagentPolicy,
     automationRun: thread.automationRun,
     liveHeadline: thread.liveHeadline,
     planProgress: thread.planProgress,

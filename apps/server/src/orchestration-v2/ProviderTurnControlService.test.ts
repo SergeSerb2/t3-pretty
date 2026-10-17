@@ -274,6 +274,7 @@ it.effect(
               providerSessionId === oldSessionId ? Option.some(runtime) : Option.none(),
             ),
           isLive: (providerSessionId) => Effect.succeed(providerSessionId === oldSessionId),
+          isInstanceBusy: () => Effect.succeed(false),
           close: () => Effect.void,
           closeInstance: () => Effect.void,
           release: () => Effect.void,

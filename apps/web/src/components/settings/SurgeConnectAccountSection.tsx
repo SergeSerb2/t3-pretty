@@ -4,6 +4,7 @@ import { SURGE_CODE_ACCOUNT_NAME, SURGE_CONNECT_NAME } from "@t3tools/shared/con
 
 import { openClerkGate, useClerkGateOpen } from "~/cloud/clerkGate";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import { connectBrowserAuthHandoffUrl } from "~/cloud/browserAuth";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
 import { Button } from "../ui/button";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -68,11 +69,19 @@ export function SurgeConnectAccountSection() {
   if (!clerkGateOpen) {
     return (
       <AccountSection
-        presentation={resolveSurgeConnectAccountPresentation({
-          accountLabel: null,
-          isLoaded: true,
-          isSignedIn: false,
-        })}
+        presentation={
+          connectBrowserAuthHandoffUrl() !== null
+            ? {
+                action: "sign-in",
+                actionLabel: `Open ${SURGE_CONNECT_NAME}`,
+                description: `${SURGE_CONNECT_NAME} opens in the official web app. Pairing links work in this browser.`,
+              }
+            : resolveSurgeConnectAccountPresentation({
+                accountLabel: null,
+                isLoaded: true,
+                isSignedIn: false,
+              })
+        }
         onAction={() => openClerkGate({ promptSignIn: true })}
       />
     );

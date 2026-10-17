@@ -456,9 +456,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     OrchestrationV2ThreadStreamItem,
     { kind: "event" | "unknown-event" }
   >;
-  const applyEventsLocked = Effect.fn("EnvironmentThreadState.applyEventsLocked")(function* (
-    items: ReadonlyArray<SequencedItem>,
-  ) {
+  // Runs for every streamed batch inside the traced applyItems span. Untraced so
+  // streaming does not create, capture and export extra client spans per batch.
+  const applyEventsLocked = Effect.fnUntraced(function* (items: ReadonlyArray<SequencedItem>) {
     const appliedSequence = yield* SubscriptionRef.get(lastSequence);
     let sequence = appliedSequence;
     const fresh: EventItem[] = [];
@@ -583,9 +583,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
   });
 
-  const applyItemLocked = Effect.fn("EnvironmentThreadState.applyItemLocked")(function* (
-    item: OrchestrationV2ThreadStreamItem,
-  ) {
+  const applyItemLocked = Effect.fnUntraced(function* (item: OrchestrationV2ThreadStreamItem) {
     if (item.kind === "synchronized") {
       yield* Ref.set(awaitingCompletion, false);
       yield* SubscriptionRef.update(state, (current) =>

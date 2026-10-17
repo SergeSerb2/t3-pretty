@@ -1,3 +1,5 @@
+import { ThreadShareInfo } from "@t3tools/contracts";
+import * as ThreadSharing from "../../../sharing/ThreadSharing.ts";
 import {
   ScheduledTaskId,
   ScheduledTask,
@@ -271,7 +273,24 @@ const ScheduledTaskRunTool = Tool.make("run_scheduled_task_now", {
   .annotate(Tool.Destructive, true)
   .annotate(Tool.OpenWorld, true);
 
+const ThreadShareTool = Tool.make("t3_thread_share", {
+  description:
+    "Manage a public, read-only snapshot of user and assistant text. Omit threadId for this thread. publish requires publicBaseUrl, the publicly reachable HTTP(S) origin of this environment. Anyone with the link can read it without signing in. Review private information before publishing. Later messages stay private until publish runs again. revoke disables the link. The server must remain online.",
+  parameters: Schema.Struct({
+    threadId: Schema.optional(ThreadId),
+    action: Schema.Literals(["get", "publish", "revoke"]),
+    publicBaseUrl: Schema.optional(Schema.String.check(Schema.isMaxLength(2_048))),
+  }),
+  success: Schema.NullOr(ThreadShareInfo),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return" as const,
+  dependencies: [...commandTool.dependencies, ThreadSharing.ThreadSharing],
+})
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.OpenWorld, true);
+
 export const ThreadToolkit = Toolkit.make(
+  ThreadShareTool,
   ScheduledTaskRunTool,
   ThreadSearchTool,
   ThreadForkTool,

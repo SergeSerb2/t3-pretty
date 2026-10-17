@@ -466,7 +466,6 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.unstore":
     case "thread.scenery.assign":
     case "thread.skills.set":
-    case "thread.subagent-policy.set":
     case "thread.metadata.update":
     case "thread.pull-request.link":
     case "thread.pull-request.unlink":
@@ -2286,7 +2285,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       storedAt: null,
       scenery: null,
       enabledSkillIds: command.enabledSkillIds ?? [],
-      subagentPolicy: command.subagentPolicy ?? null,
       automationRun: command.automationRun ?? null,
       settledOverride: null,
       settledAt: null,
@@ -2458,7 +2456,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.unstore"
           | "thread.scenery.assign"
           | "thread.skills.set"
-          | "thread.subagent-policy.set"
           | "thread.metadata.update"
           | "thread.pull-request.link"
           | "thread.pull-request.unlink"
@@ -3090,8 +3087,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             enabledSkillIds: [...new Set(command.enabledSkillIds)],
             updatedAt: now,
           };
-        case "thread.subagent-policy.set":
-          return { ...thread, subagentPolicy: command.subagentPolicy, updatedAt: now };
         case "thread.metadata.update": {
           const previousRecovery =
             thread.limitRecovery?.runId === command.limitRecovery?.runId &&
@@ -3125,9 +3120,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.enabledSkillIds === undefined
               ? {}
               : { enabledSkillIds: [...new Set(command.enabledSkillIds)] }),
-            ...(command.subagentPolicy === undefined
-              ? {}
-              : { subagentPolicy: command.subagentPolicy }),
             ...(command.automationRun === undefined
               ? {}
               : { automationRun: command.automationRun }),
@@ -3443,7 +3435,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.unstore":
         case "thread.scenery.assign":
         case "thread.skills.set":
-        case "thread.subagent-policy.set":
         case "thread.metadata.update":
         case "thread.title.regeneration.complete":
           return "thread.metadata-updated" as const;
@@ -11021,7 +11012,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.unstore":
       case "thread.scenery.assign":
       case "thread.skills.set":
-      case "thread.subagent-policy.set":
       case "thread.metadata.update":
       case "thread.pull-request.link":
       case "thread.pull-request.unlink":

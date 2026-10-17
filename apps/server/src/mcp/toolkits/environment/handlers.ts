@@ -13,6 +13,8 @@ export function preferences(settings: ServerSettings) {
     defaultThreadEnvMode,
     newWorktreesStartFromOrigin,
     enableProviderUpdateChecks,
+    autoUpdateProviders,
+    agentPerfBenchmarks,
     backgroundActivity,
     sourceControlWritingStyle,
   } = settings;
@@ -21,6 +23,8 @@ export function preferences(settings: ServerSettings) {
     defaultThreadEnvMode,
     newWorktreesStartFromOrigin,
     enableProviderUpdateChecks,
+    autoUpdateProviders,
+    agentPerfBenchmarks,
     backgroundActivity: { profile: backgroundActivity.profile },
     sourceControlWritingStyle: {
       ...sourceControlWritingStyle,

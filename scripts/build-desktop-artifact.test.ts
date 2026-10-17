@@ -301,6 +301,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "T3 Pretty");
+    assert.equal(resolveDesktopProductName("0.1.0"), "T3 Pretty");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Pretty (Nightly)");
     assert.equal(resolveDesktopProductName("0.0.17", "internal"), "T3 Pretty Internal");
     assert.equal(
@@ -403,6 +404,27 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         releaseType: "prerelease",
         channel: "nightly",
       });
+    }),
+  );
+
+  it.effect("pins public release updates even with an inherited internal repository", () =>
+    Effect.gen(function* () {
+      for (const env of [
+        { T3CODE_PUBLIC_RELEASE: "1" },
+        {
+          T3CODE_PUBLIC_RELEASE: "1",
+          GITHUB_REPOSITORY: "private-owner/internal-releases",
+        },
+      ]) {
+        const config = yield* resolveGitHubPublishConfig("latest").pipe(
+          Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+        );
+        assert.deepStrictEqual(config, {
+          provider: "generic",
+          url: "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/",
+          useMultipleRangeRequest: false,
+        });
+      }
     }),
   );
 
@@ -2385,7 +2407,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
     assert.include(entitlements, "<key>com.apple.security.device.audio-input</key>");
-    assert.notInclude(
+    assert.include(
       renderMacPasskeyEntitlements(
         { ...configuration, appId: "com.sergeserb.t3pretty" },
         {
@@ -2591,31 +2613,37 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it.effect("signs internal macOS builds for microphone access without a passkey profile", () =>
-    Effect.gen(function* () {
-      const config = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "1.2.3-nightly.20260918.1",
-        true,
-        false,
-        undefined,
-        {
-          entitlementsPath: "/tmp/entitlements.mac.inherit.plist",
-          entitlementsInheritPath: "/tmp/entitlements.mac.inherit.plist",
-        },
-        "internal",
-      );
+  it.effect.each(["public", "internal"] as const)(
+    "signs %s macOS builds for microphone access without a passkey profile",
+    (buildFlavor) =>
+      Effect.gen(function* () {
+        const config = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "1.2.3-nightly.20260918.1",
+          true,
+          false,
+          undefined,
+          {
+            entitlementsPath: "/tmp/entitlements.mac.inherit.plist",
+            entitlementsInheritPath: "/tmp/entitlements.mac.inherit.plist",
+          },
+          buildFlavor,
+        );
 
-      const mac = config.mac as Record<string, unknown>;
-      assert.equal(mac.entitlements, "/tmp/entitlements.mac.inherit.plist");
-      assert.equal(mac.entitlementsInherit, "/tmp/entitlements.mac.inherit.plist");
-      assert.equal(mac.provisioningProfile, undefined);
-      assert.match(
-        String((mac.extendInfo as Record<string, unknown>).NSMicrophoneUsageDescription),
-        /dictate messages/,
-      );
-    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+        const mac = config.mac as Record<string, unknown>;
+        assert.equal(mac.entitlements, "/tmp/entitlements.mac.inherit.plist");
+        assert.equal(mac.entitlementsInherit, "/tmp/entitlements.mac.inherit.plist");
+        assert.equal(mac.provisioningProfile, undefined);
+        assert.match(
+          String((mac.extendInfo as Record<string, unknown>).NSMicrophoneUsageDescription),
+          /dictate messages/,
+        );
+        assert.match(
+          String((mac.extendInfo as Record<string, unknown>).NSSpeechRecognitionUsageDescription),
+          /speech recognition/,
+        );
+      }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
   it.effect("uses the nightly DMG background for nightly macOS builds", () =>
@@ -2635,6 +2663,99 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "dmg/dmg-background-nightly.png",
       );
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect.each(["public", "internal"] as const)(
+    "generates a %s Linux package with matching launcher and AppStream identity",
+    (buildFlavor) =>
+      Effect.gen(function* () {
+        const config = yield* createBuildConfig(
+          "linux",
+          "AppImage",
+          "1.2.3",
+          false,
+          false,
+          undefined,
+          undefined,
+          buildFlavor,
+        );
+        const linux = config.linux as Record<string, unknown>;
+        const desktopRequire = NodeModule.createRequire(
+          NodeURL.fileURLToPath(new URL("../apps/desktop/package.json", import.meta.url)),
+        );
+        const builderRequire = NodeModule.createRequire(
+          desktopRequire.resolve("electron-builder/package.json"),
+        );
+        const { LinuxTargetHelper } = builderRequire(
+          "app-builder-lib/out/targets/LinuxTargetHelper.js",
+        ) as {
+          readonly LinuxTargetHelper: new (packager: object) => {
+            readonly computeDesktopEntry: (options: object) => Promise<string>;
+            readonly getDesktopFileName: () => string;
+          };
+        };
+        const helper = new LinuxTargetHelper({
+          config,
+          executableName: linux.executableName,
+          platformSpecificBuildOptions: linux,
+          info: { metadata: {} },
+          fileAssociations: [],
+          appInfo: {
+            productName: config.productName,
+            sanitizedProductName: config.productName,
+            description: "Desktop GUI for coding agents",
+          },
+        });
+        const entry = yield* Effect.promise(() => helper.computeDesktopEntry(linux));
+        const executable = buildFlavor === "internal" ? "t3code" : "t3pretty";
+        assert.equal(helper.getDesktopFileName(), executable);
+        assert.include(entry, `Exec="/opt/${String(config.productName)}/${executable}" %U\n`);
+        assert.include(entry, `Icon=${executable}\n`);
+        assert.include(entry, `StartupWMClass=${executable}\n`);
+        assert.include(entry, "MimeType=x-scheme-handler/t3code;x-scheme-handler/t3code-dev;");
+
+        const deb = config.deb as { readonly fpm: ReadonlyArray<string> };
+        const { default: FpmTarget } = builderRequire(
+          "app-builder-lib/out/targets/FpmTarget.js",
+        ) as {
+          readonly default: {
+            readonly prototype: {
+              readonly computeFpmMetaInfoOptions: (this: object) => Promise<{ name: string }>;
+            };
+          };
+        };
+        // Exercise the installed packager's metadata output. The staged npm
+        // name is t3code for both flavors, which was replacing internal installs.
+        const metadata = yield* Effect.promise(() =>
+          FpmTarget.prototype.computeFpmMetaInfoOptions.call({
+            options: { ...linux, ...deb },
+            packager: {
+              appInfo: {
+                linuxPackageName: "t3code",
+                computePackageUrl: async () => "https://t3.codes",
+              },
+            },
+          }),
+        );
+        assert.equal(metadata.name, executable);
+        const fs = yield* FileSystem.FileSystem;
+        for (const mapping of deb.fpm) {
+          const [source, destination] = mapping.split("=");
+          assert.isString(source);
+          assert.isString(destination);
+          const contents = yield* fs.readFileString(source!);
+          if (destination!.endsWith(".metainfo.xml")) {
+            assert.include(contents, `<launchable type="desktop-id">${executable}.desktop`);
+            assert.include(contents, `<icon type="stock">${executable}</icon>`);
+            assert.include(contents, `<binary>${executable}</binary>`);
+            const id = /<id>([^<]+)<\/id>/.exec(contents)?.[1];
+            assert.equal(destination, `/usr/share/metainfo/${id}.metainfo.xml`);
+          } else {
+            assert.equal(destination, `/usr/share/doc/${metadata.name}/copyright`);
+            assert.include(contents, "MIT License");
+          }
+        }
+      }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
   it.effect("configures Windows executable metadata and native signing extensions", () =>

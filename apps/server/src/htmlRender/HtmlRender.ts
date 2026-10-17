@@ -399,7 +399,7 @@ const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const executable = yield* previewBrowser.installed;
       if (Option.isNone(executable)) return undefined;
-      const heights = yield* launching(executable.value, (noSandbox) =>
+      const { heights, outline } = yield* launching(executable.value, (noSandbox) =>
         HeadlessChrome.measureHtmlHeights({
           executable: executable.value,
           noSandbox,
@@ -418,7 +418,7 @@ const make = Effect.gen(function* () {
             ),
         }),
       );
-      return heights.toSorted(([left], [right]) => left - right);
+      return { heights: heights.toSorted(([left], [right]) => left - right), outline };
     }).pipe(
       Effect.catch((cause) =>
         Effect.logWarning("Could not measure an HTML render; publishing it without heights.", {
@@ -467,7 +467,7 @@ const make = Effect.gen(function* () {
     }
     // Mark only tool-published pages. An uncommitted user upload or draft is not an orphan.
     const pendingPath = `${filePath}.pending-html-render`;
-    const heights = yield* fileSystem.writeFileString(pendingPath, "").pipe(
+    const measured = yield* fileSystem.writeFileString(pendingPath, "").pipe(
       Effect.andThen(fileSystem.writeFileString(filePath, html)),
       Effect.mapError((cause) => new HtmlRenderStoreError({ cause })),
       Effect.andThen(measure(html)),
@@ -487,7 +487,8 @@ const make = Effect.gen(function* () {
       attachmentId,
       title: input.title.trim().slice(0, HTML_RENDER_MAX_TITLE_LENGTH) || "HTML",
       height: clampHtmlRenderHeight(input.height),
-      ...(heights === undefined ? {} : { heights }),
+      ...(measured === undefined ? {} : { heights: measured.heights }),
+      ...(measured?.outline === undefined ? {} : { outline: measured.outline }),
     } satisfies HtmlRenderReference;
   });
 

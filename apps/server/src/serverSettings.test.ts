@@ -99,6 +99,68 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect(
+    "persists independent scenery edits and explicit resets without losing other fields",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        assert.equal((yield* service.getSettings).sceneryAppearance, null);
+        yield* service.updateSettings({
+          sceneryPhotoSet: "night-cities",
+          sceneryAppearance: { blur: 80, translucency: 0.65, contrast: 135 },
+        });
+        yield* Effect.all(
+          [
+            service.updateSettings({ sceneryAppearance: { blur: 0 } }),
+            service.updateSettings({ sceneryAppearance: { contrast: 100 } }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        const settings = yield* service.getSettings;
+        assert.deepEqual(settings.sceneryAppearance, {
+          blur: 0,
+          translucency: 0.65,
+          contrast: 100,
+        });
+        assert.equal(settings.sceneryPhotoSet, "night-cities");
+        const persisted = yield* fs
+          .readFileString(config.settingsPath)
+          .pipe(Effect.flatMap(decodeServerSettingsJson));
+        assert.deepEqual(persisted.sceneryAppearance, settings.sceneryAppearance);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("persists the newest rail layout when machines save out of order", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const old = {
+        version: 10,
+        folders: [{ id: "work", name: "Work", collapsed: false }],
+        assignments: { a: "work" },
+        projectOrder: ["a", "b"],
+      };
+      const cleared = { version: 20, folders: [], assignments: {}, projectOrder: ["b", "a"] };
+      yield* Effect.all(
+        [
+          service.updateSettings({ sidebarProjectLayout: cleared }),
+          service.updateSettings({ sidebarProjectLayout: old }),
+        ],
+        { concurrency: "unbounded" },
+      );
+      const settings = yield* service.getSettings;
+      assert.deepEqual(settings.sidebarProjectLayout, cleared);
+      assert.deepEqual(settings.sidebarProjectFolders, []);
+      assert.deepEqual(settings.sidebarProjectFolderAssignments, {});
+      const persisted = yield* fs
+        .readFileString(config.settingsPath)
+        .pipe(Effect.flatMap(decodeServerSettingsJson));
+      assert.deepEqual(persisted.sidebarProjectLayout, cleared);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;

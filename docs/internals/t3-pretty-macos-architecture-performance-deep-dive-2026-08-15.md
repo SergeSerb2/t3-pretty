@@ -376,10 +376,12 @@ scheme back to `system`, capture stopped, no diagnostics history). `diagnostics`
 map: console/network buffers `push`/`shift` at 200, in-flight `requests` evict the oldest at 500;
 `onMessage` drops CDP events outside the eight it handles before forking anything. Recording/PiP:
 `Page.startScreencast` (jpeg q80, ≤1600 px) is started per capture and its frames — already encoded
-off the JS thread — feed the same delivery path; the 12 fps `capturePage` tick only runs while no
-screencast frame arrived in the last 250 ms (`SCREENCAST_GRACE_MS`), which covers DevTools holding
-the debugger, guests whose screencast starves while offscreen, and static pages, and it downscales to
-the same 1600 px bound before `toJPEG`. Recording frames are sent to `wc.hostWebContents` (the window
+off the JS thread — feed the same delivery path; a frame inside the 12 fps interval is dropped and
+its ack held until the interval ends, which paces Chromium to the delivery rate. The 12 fps
+`capturePage` tick only runs while no screencast frame arrived in the last 250 ms
+(`SCREENCAST_GRACE_MS`), which covers DevTools holding the debugger, guests whose screencast starves
+while offscreen, and static pages; it downscales to the same 1600 px bound before `toJPEG` and backs
+off toward 2 fps while it keeps producing identical frames. Recording frames are sent to `wc.hostWebContents` (the window
 hosting the guest, where the renderer-side recorder lives) instead of `sendAll`; the PiP window keeps
 its direct channel.
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { create } from "zustand";
 import {
   localSnoozeDate,
@@ -8,7 +8,6 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import { Button } from "./ui/button";
 import { CalendarIcon } from "lucide-react";
-import { Calendar } from "./ui/calendar";
 import { weekStartsOn } from "../timestampFormat";
 import { Popover, PopoverTrigger, PopoverPopup } from "./ui/popover";
 import { Input } from "./ui/input";
@@ -31,6 +30,10 @@ import {
   DialogPanel,
   DialogFooter,
 } from "./ui/dialog";
+
+// The date picker library is only needed once this dialog opens.
+const loadCalendar = () => import("./ui/calendar");
+const Calendar = lazy(() => loadCalendar().then((module) => ({ default: module.Calendar })));
 
 type SnoozeChoice = { readonly snoozedUntil: string };
 type Request = { readonly resolve: (choice: SnoozeChoice | null) => void };
@@ -63,6 +66,9 @@ function CustomSnoozeDialog() {
   const [amount, setAmount] = useState("2");
   const [unit, setUnit] = useState<"minutes" | "hours" | "days">("hours");
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void loadCalendar();
+  }, []);
   const input: CustomSnoozeInput =
     mode === "date" ? { mode, date: localSnoozeDate(date), time } : { mode, amount, unit };
   return (
@@ -131,19 +137,21 @@ function CustomSnoozeDialog() {
                           <CalendarIcon className="size-4 text-muted-foreground" />
                         </PopoverTrigger>
                         <PopoverPopup align="start" aria-label="Choose snooze date">
-                          <Calendar
-                            mode="single"
-                            required
-                            selected={date}
-                            defaultMonth={date}
-                            {...(weekStartsOn === undefined ? {} : { weekStartsOn })}
-                            disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
-                            onSelect={(selected) => {
-                              setDate(selected);
-                              setCalendarOpen(false);
-                              setError(null);
-                            }}
-                          />
+                          <Suspense fallback={null}>
+                            <Calendar
+                              mode="single"
+                              required
+                              selected={date}
+                              defaultMonth={date}
+                              {...(weekStartsOn === undefined ? {} : { weekStartsOn })}
+                              disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
+                              onSelect={(selected) => {
+                                setDate(selected);
+                                setCalendarOpen(false);
+                                setError(null);
+                              }}
+                            />
+                          </Suspense>
                         </PopoverPopup>
                       </Popover>
                     </div>

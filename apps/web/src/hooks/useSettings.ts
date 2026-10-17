@@ -64,6 +64,10 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 import { environmentSession, readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import {
+  compareSidebarProjectLayouts,
+  nextSidebarProjectLayout,
+} from "@t3tools/shared/sidebarProjectLayout";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
@@ -190,6 +194,43 @@ function enqueueClientSettingsPersistence<A>(work: () => Promise<A>): Promise<A>
   return result;
 }
 
+function applyClientSettingsPatch(
+  current: ClientSettings,
+  patch: ClientSettingsPatch,
+): ClientSettings {
+  const next = { ...current, ...patch };
+  if (
+    patch.sidebarProjectLayout === undefined &&
+    (patch.sidebarProjectSortOrder !== undefined ||
+      patch.sidebarProjectGroupingMode !== undefined ||
+      patch.sidebarProjectGroupingOverrides !== undefined) &&
+    current.sidebarProjectLayout
+  ) {
+    const content = {
+      ...current.sidebarProjectLayout,
+      ...(patch.sidebarProjectSortOrder === undefined
+        ? {}
+        : { sortOrder: patch.sidebarProjectSortOrder }),
+      ...(patch.sidebarProjectGroupingMode === undefined
+        ? {}
+        : { groupingMode: patch.sidebarProjectGroupingMode }),
+      ...(patch.sidebarProjectGroupingOverrides === undefined
+        ? {}
+        : { groupingOverrides: patch.sidebarProjectGroupingOverrides }),
+    };
+    if (compareSidebarProjectLayouts(content, current.sidebarProjectLayout) === 0) return next;
+    return {
+      ...next,
+      sidebarProjectLayout: nextSidebarProjectLayout(
+        current.sidebarProjectLayout,
+        content,
+        Date.now(),
+      ),
+    };
+  }
+  return next;
+}
+
 export function persistClientSettingsPatch(
   patch: ClientSettingsPatch,
   persist: (settings: ClientSettings) => Promise<void> = defaultClientSettingsPersistence,
@@ -200,7 +241,7 @@ export function persistClientSettingsPatch(
   if (deferPatch) {
     deferredClientSettingsPatchCount += 1;
   } else {
-    replaceClientSettingsSnapshot({ ...getClientSettingsSnapshot(), ...patch });
+    replaceClientSettingsSnapshot(applyClientSettingsPatch(getClientSettingsSnapshot(), patch));
   }
   return enqueueClientSettingsPersistence(async () => {
     if (deferPatch) {
@@ -208,7 +249,7 @@ export function persistClientSettingsPatch(
         if (clientSettingsHydrationStatus !== "ready") {
           await hydrateClientSettings();
         }
-        replaceClientSettingsSnapshot({ ...getClientSettingsSnapshot(), ...patch });
+        replaceClientSettingsSnapshot(applyClientSettingsPatch(getClientSettingsSnapshot(), patch));
       } finally {
         deferredClientSettingsPatchCount -= 1;
       }
@@ -690,7 +731,17 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
   const sharedSettingsSyncTargetIds = useSharedSettingsSyncTargetIds(true);
   const updateSettings = useCallback(
     (patch: UnifiedSettingsPatch) => {
-      const { serverPatch, clientPatch } = splitPatch(patch);
+      const { serverPatch, clientPatch } = splitPatch(
+        patch.appearanceContrast === undefined
+          ? patch
+          : {
+              ...patch,
+              sceneryAppearance: {
+                ...patch.sceneryAppearance,
+                contrast: patch.appearanceContrast,
+              },
+            },
+      );
 
       const canWriteServerPatch =
         environmentId === null ||

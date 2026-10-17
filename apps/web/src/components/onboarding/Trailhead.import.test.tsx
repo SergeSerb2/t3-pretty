@@ -142,6 +142,7 @@ vi.mock("../settings/CodexSetupSection", () => ({
 }));
 vi.mock("../settings/providerDriverMeta", () => ({
   providerClients: { get: () => ({ label: "Agent" }) },
+  getDriverOption: () => ({ label: "Agent" }),
 }));
 vi.mock("../settings/providerStatus", () => ({
   getProviderSummary: () => ({ headline: "Checking", detail: null }),

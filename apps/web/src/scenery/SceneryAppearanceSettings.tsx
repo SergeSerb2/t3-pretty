@@ -4,26 +4,22 @@
  * photo engine stays out of the settings chunk until then.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  photoPresenceToTranslucency,
+  translucencyToPhotoPresence,
+} from "@t3tools/client-runtime/state/scenery-sync";
 
 import { SettingResetButton, SettingsRow } from "../components/settings/settingsLayout";
 import { searchableSetting } from "../components/settings/settingsSearch";
 import { Switch } from "../components/ui/switch";
-import { DEFAULT_TRANSLUCENCY, TRANSLUCENCY_RANGE } from "./glass";
+import { DEFAULT_TRANSLUCENCY } from "./glass";
 import { useMotionStore } from "./motionStore";
 import { BLUR_RANGE, DEFAULT_BLUR, useSceneryStore } from "./sceneryStore";
+import { usePublishSceneryAppearance } from "./useSyncedSceneryPhotoSet";
 
 const BLUR_COMMIT_DELAY_MS = 250;
 
-const { lowerBound: T_MIN, upperBound: T_MAX } = TRANSLUCENCY_RANGE;
-const DEFAULT_PHOTO_PRESENCE = translucencyToPercent(DEFAULT_TRANSLUCENCY);
-
-function translucencyToPercent(translucency: number): number {
-  return Math.round(((translucency - T_MIN) / (T_MAX - T_MIN)) * 100);
-}
-
-function percentToTranslucency(percent: number): number {
-  return T_MIN + (percent / 100) * (T_MAX - T_MIN);
-}
+const DEFAULT_PHOTO_PRESENCE = translucencyToPhotoPresence(DEFAULT_TRANSLUCENCY);
 
 function sliderStyle(ratio: number): CSSProperties {
   return {
@@ -35,8 +31,15 @@ function sliderStyle(ratio: number): CSSProperties {
 export default function SceneryAppearanceSettings() {
   const blur = useSceneryStore((state) => state.blur);
   const translucency = useSceneryStore((state) => state.translucency);
-  const setBlur = useSceneryStore((state) => state.setBlur);
-  const setTranslucency = useSceneryStore((state) => state.setTranslucency);
+  const publishAppearance = usePublishSceneryAppearance();
+  const setBlur = (value: number) => {
+    useSceneryStore.getState().setBlur(value);
+    publishAppearance({ blur: value });
+  };
+  const setTranslucency = (value: number) => {
+    useSceneryStore.getState().setTranslucency(value);
+    publishAppearance({ translucency: value });
+  };
   const motionEnabled = useMotionStore((state) => state.enabled);
   const setMotionEnabled = useMotionStore((state) => state.setEnabled);
 
@@ -66,7 +69,7 @@ export default function SceneryAppearanceSettings() {
     [],
   );
 
-  const photoPresence = translucencyToPercent(translucency);
+  const photoPresence = translucencyToPhotoPresence(translucency);
   const blurRatio = useMemo(
     () => (blurDraft - BLUR_RANGE.lowerBound) / (BLUR_RANGE.upperBound - BLUR_RANGE.lowerBound),
     [blurDraft],
@@ -120,7 +123,7 @@ export default function SceneryAppearanceSettings() {
           photoPresence !== DEFAULT_PHOTO_PRESENCE ? (
             <SettingResetButton
               label="photo presence"
-              onClick={() => setTranslucency(percentToTranslucency(DEFAULT_PHOTO_PRESENCE))}
+              onClick={() => setTranslucency(photoPresenceToTranslucency(DEFAULT_PHOTO_PRESENCE))}
             />
           ) : null
         }
@@ -139,7 +142,7 @@ export default function SceneryAppearanceSettings() {
               max={100}
               min={0}
               onChange={(event) =>
-                setTranslucency(percentToTranslucency(Number(event.currentTarget.value)))
+                setTranslucency(photoPresenceToTranslucency(Number(event.currentTarget.value)))
               }
               step={1}
               style={sliderStyle(photoPresence / 100)}

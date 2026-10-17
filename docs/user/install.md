@@ -1,110 +1,108 @@
-# Install T3 Code
+# Install T3 Pretty
 
-T3 Code runs coding agents on your computer and lets you control them from its
-desktop, web, or mobile app. Set up the machine where the agents will work first.
+T3 Pretty runs coding agents on your computer. Use its desktop or web client there,
+then connect from another device when you need remote access.
+Set up the machine where the agents will work first.
 
-This page installs T3 Pretty from the
-[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
-GitHub Releases are not the install channel; the GitHub tag `desktop-r2-latest`
-is only a pointer. The same feed is the
-[internal release path](../operations/public-release-and-github-mirror.md#internal-release-path)
-(Surge Connect, `~/.t3`).
+## Get a public release
+
+Open [T3 Pretty releases](https://github.com/SergeSerb2/t3-pretty/releases) and choose
+**`public-v<version>`**. Use only the assets listed on that release. Its notes describe
+which platforms it supports. Older nightly releases and `desktop-r2-latest` are part of
+the internal release line and use a separate update feed.
+
+Public desktop builds use T3 Connect, a separate app identity, and `~/.t3-pretty`
+for their default data directory. Installers update through the public GitHub feed.
+If your platform has no installer on that release, [build from source](#run-from-source).
 
 ## Requirements
 
-You need an installed, authenticated provider before starting a thread. You can
-launch T3 Code and configure providers afterwards.
+Install and sign in to a provider before starting your first thread.
+You can open T3 Pretty and configure providers afterwards in **Settings → Providers**.
+The standalone CLI also needs Node.js and npm; Node.js 24 is the recommended source-build version.
 
 ## Command line
 
-T3 Pretty's CLI is not `npx t3`; that command installs upstream T3 Code.
+If the selected public release includes `install.sh` and `t3.tgz`, install its CLI
+on macOS or Linux:
 
-Install the T3 Pretty CLI on macOS or Linux:
-
-```bash
-curl -fsSL https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.sh | sh
+```sh
+curl -fsSL https://github.com/SergeSerb2/t3-pretty/releases/latest/download/install.sh | sh
 ```
 
-On Windows, install it from the same T3 Pretty R2 feed in PowerShell:
+Check that the latest release is tagged `public-v<version>` before using this URL.
+To pin a version, download its `t3-<version>.tgz` asset and install that file with npm.
+This also works in Windows PowerShell:
 
-```powershell
-irm https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/install.ps1 | iex
-```
-
-Then start it:
-
-```bash
+```sh
+npm install --global ./t3-<version>.tgz
 t3
 ```
 
-On macOS and Linux, this installs the `t3` binary to `~/.local/bin`. If your
-shell reports `command not found` afterwards, that directory is not on your
-`PATH` yet; the installer prints the line to add.
+Replace `<version>` with the version you downloaded. npm may need a C++ build toolchain
+for native dependencies. The macOS/Linux installer uses `~/.local/bin` by default;
+follow its printed PATH instructions if `t3` is not found.
+The command `npx t3` installs upstream T3 Code.
 
-| Task                                             | Command                                                   |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| Start the server and open the web app            | `t3`                                                      |
-| Start the server without a browser               | `t3 serve`                                                |
-| Keep it running in the background (macOS, Linux) | `t3 service install` ([details](./background-service.md)) |
-| Move to the newest T3 Pretty release             | `t3 update`                                               |
-| Remove it again                                  | `t3 uninstall`                                            |
+| Task                                         | Command                                                   |
+| -------------------------------------------- | --------------------------------------------------------- |
+| Start the server and open the web app        | `t3`                                                      |
+| Start without a browser                      | `t3 serve`                                                |
+| Keep a macOS/Linux host running after logout | `t3 service install` ([details](./background-service.md)) |
+| Show pairing details                         | `t3 pair`                                                 |
+| Show command help                            | `t3 --help`                                               |
 
-Run `t3 help` or `t3 --help` for the full reference. To start in a new working
-directory, use an explicit path such as `t3 ./my-project`. A bare directory name
-is accepted only if it already exists.
+Run provider login commands on the machine that hosts the server.
+To connect remotely, follow [remote access](./remote-access.md), then enable
+**T3 Connect** in **Settings → Connections** if you want relay access.
 
-If `t3` or `t3 start` reports an already running server, connect to that server
-instead. Stop it before starting a replacement, or use a different `--base-dir`
-for an independent server.
+## Run from source
 
-On a macOS or Linux machine that should stay reachable after logout, run
-`t3 service install` and pair from another device, then turn on **Surge Connect**
-under **Settings** → **Connections**.
+Install Git and Node.js 24 (`^24.13.1`), then install [Vite+](https://viteplus.dev/guide/):
 
-### Intel Macs
-
-There is no `t3` executable for Intel Macs (the desktop app is available). To
-run a server there, build it from source with Node.js 24 and `vp`
-([Install vp](https://github.com/pingdotgg/t3code#install-vp)):
-
-```bash
-git clone https://github.com/pingdotgg/t3code
-cd t3code && vp i && vp run build:desktop
-node apps/server/dist/bin.mjs
+```sh
+# macOS or Linux
+curl -fsSL https://vite.plus | bash
 ```
 
-`t3 update` and the background service do not apply to a server run this way;
-update it with `git pull` and a rebuild.
+```powershell
+# Windows PowerShell
+irm https://vite.plus/ps1 | iex
+```
+
+Open a new terminal and run:
+
+```sh
+git clone https://github.com/SergeSerb2/t3-pretty.git
+cd t3-pretty
+vp i --frozen-lockfile
+vp run dev
+```
+
+Open the full pairing URL printed by the command, including its token.
+To build the CLI and its web client:
+
+```sh
+vp run --filter t3 build
+node apps/server/dist/bin.mjs serve
+```
+
+To build and open the desktop app:
+
+```sh
+vp run build:desktop
+vp run start:desktop
+```
+
+Source builds do not install an updater-managed application. Update the checkout to a
+new public stable snapshot and rebuild when you want a newer version.
 
 ## Desktop app
 
-Download today's tip from the
-[R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
-Do not install from old GitHub Release assets. The GitHub tag `desktop-r2-latest`
-is only a pointer.
-
-- macOS (Apple Silicon):
-  [DMG](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002073-arm64.dmg)
-- Windows (x64):
-  [NSIS](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-0.0.41-nightly.20260914.1707002055-x64.exe)
-- Linux (x64):
-  [AppImage](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/T3-Code-x64.AppImage)
-  and `.deb` from the same
-  [R2 feed](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/).
-
-When those filenames go stale, read
-[latest-mac.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-mac.yml),
-[latest.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest.yml),
-and
-[latest-linux.yml](https://pub-8033bcab5baf492b81c605581ff028e0.r2.dev/t3-pretty/latest/latest-linux.yml)
-for the current tip. After the first install, the desktop app updates itself from
-the same feed.
-
-The Linux `.deb` updates itself like the other desktop builds. It asks for your
-password to install each update. If your desktop has no password prompt, the
-update fails. Download the new `.deb` from the R2 feed and install it the same
-way. `winget`, Homebrew `t3-code`, and AUR `t3code-bin` install upstream T3 Code,
-not this fork.
+Download the installer for your system from the selected
+[public stable release](https://github.com/SergeSerb2/t3-pretty/releases).
+Use the platform and architecture stated in its filename and release notes.
+Homebrew `t3-code`, `winget`, and AUR `t3code-bin` refer to upstream T3 Code.
 
 ### The `t3` command
 
@@ -153,17 +151,15 @@ the desktop app and try again.
 
 ## Mobile app
 
-Install the T3 Pretty mobile app for iOS or Android through the distribution
-channel for your build. The phone connects to a T3 Pretty server on another
-machine. Follow [remote access](./remote-access.md) to link it through Surge
-Connect or a pairing URL.
+When a public release includes a signed Android `.apk`, download it from that
+[public stable release](https://github.com/SergeSerb2/t3-pretty/releases) and install it
+on your Android device. An `.aab` is an Android App Bundle for distribution tooling;
+it does not install directly. Availability depends on the assets listed for that release.
+This fork has no claimed public App Store or Google Play listing.
 
-Nightly builds need the beta app. The store apps cannot connect to them. A Nightly build also
-shows these links as QR codes in **Settings → General → Mobile app**.
-
-- **iPhone and iPad:** join the [TestFlight beta](https://testflight.apple.com/join/XgaxaRtd).
-- **Android:** download and install the APK from the
-  [Android beta release](https://github.com/pingdotgg/t3code/releases/tag/android-nightly).
+The mobile client connects to a T3 Pretty server on another machine.
+Follow [remote access](./remote-access.md) to connect through **T3 Connect** or a direct
+pairing URL. Use the client and server versions recommended in the release notes.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and
@@ -235,7 +231,8 @@ available version. **Update now** runs the installer that owns the CLI
 CLI's own update command when T3 Code cannot tell. Update a CLI installed with
 mise through mise. Cursor and Antigravity update with T3 Code. Homebrew installs
 compare against the version Homebrew offers, which can trail the npm release by
-a few hours.
+a few hours. By default, each machine installs these updates on its own; see
+[Update providers](./updating.md#update-providers).
 
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom

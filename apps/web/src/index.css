@@ -2177,7 +2177,7 @@ html[data-window-inactive]
      transform on an existing layer. The listener (ComposerSpecular) only
      writes coordinates while the pointer moves inside the composer; a still
      pointer does not sample. Approach speed is sampled on document pointermove
-     (numbers only) and warms --composer-hover-in / --composer-hover-out.
+     (numbers only); shell entry applies it to the hover timing variables.
      The layer spans the whole glass shell — context strip included — clipped
      to the same joined silhouette as the shell's glass, so the glow follows
      the pointer down into the strip instead of cutting off at the composer
@@ -2258,7 +2258,6 @@ html[data-window-inactive]
       opacity: 0.06;
       translate: var(--spec-x, -160px) var(--spec-y, -160px);
       scale: 0.97;
-      will-change: translate;
       transition:
         translate var(--spec-follow-t) ease-out,
         scale calc(var(--composer-light-t) * var(--composer-hover-k)) var(--composer-hover-ease)
@@ -2282,7 +2281,6 @@ html[data-window-inactive]
       opacity: 0.035;
       translate: var(--spec-x, -560px) var(--spec-y, -560px);
       scale: calc(0.93 + 0.07 * var(--composer-hover-settle, 0));
-      will-change: translate;
       transition:
         translate var(--spec-follow-t) ease-out,
         scale calc(var(--composer-bloom-t) * var(--composer-hover-k)) var(--composer-hover-ease)
@@ -2296,6 +2294,13 @@ html[data-window-inactive]
 
     [data-slot="composer-shell"]:hover .chat-composer-specular::before {
       scale: 1;
+    }
+
+    /* Promote the glows only while the pointer can move them: kept on at rest,
+       the two large layers hold several MB of GPU memory per composer. */
+    [data-slot="composer-shell"]:hover .chat-composer-specular::before,
+    [data-slot="composer-shell"]:hover .chat-composer-specular::after {
+      will-change: translate;
     }
   }
 
@@ -3314,7 +3319,8 @@ html
 }
 
 .workspace-sidebar-glass {
-  position: relative;
+  /* Sidebar owns positioning; keeping its fixed shell out of flow lets the
+     gap reserve only the icon rail when collapsed. */
   z-index: 30;
   overflow: visible;
   border-color: transparent;

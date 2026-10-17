@@ -1,5 +1,9 @@
 import type { ContextMenuItem, ProjectIconOverride } from "@t3tools/contracts";
-import type { SidebarProjectFolder } from "@t3tools/contracts/settings";
+import type { SidebarProjectFolder, SidebarProjectLayout } from "@t3tools/contracts/settings";
+import {
+  compareSidebarProjectLayouts,
+  resolveSidebarProjectLayout,
+} from "@t3tools/shared/sidebarProjectLayout";
 
 export interface SidebarProjectFolderSettings {
   readonly folders: readonly SidebarProjectFolder[];
@@ -26,34 +30,15 @@ export function selectProjectFolderSettings(settings: {
   };
 }
 
-export function projectFolderSettingsPatch(settings: SidebarProjectFolderSettings): {
-  readonly sidebarProjectFolders: SidebarProjectFolder[];
-  readonly sidebarProjectFolderAssignments: Record<string, string>;
-} {
-  return {
-    sidebarProjectFolders: [...settings.folders],
-    sidebarProjectFolderAssignments: { ...settings.assignments },
-  };
-}
-
 export function projectFolderSettingsHaveEntries(settings: SidebarProjectFolderSettings): boolean {
   return settings.folders.length > 0 || Object.keys(settings.assignments).length > 0;
-}
-
-export function folderSettingsEqual(
-  left: SidebarProjectFolderSettings,
-  right: SidebarProjectFolderSettings,
-): boolean {
-  return (
-    JSON.stringify(projectFolderSettingsPatch(left)) ===
-    JSON.stringify(projectFolderSettingsPatch(right))
-  );
 }
 
 export type ProjectFolderSettingsSource =
   | {
       readonly sidebarProjectFolders?: readonly SidebarProjectFolder[];
       readonly sidebarProjectFolderAssignments?: Readonly<Record<string, string>>;
+      readonly sidebarProjectLayout?: SidebarProjectLayout | null;
     }
   | null
   | undefined;
@@ -68,31 +53,27 @@ function sourceToFolderSettings(
   });
 }
 
-/** First source that already has folders wins; later local copies are leftovers. */
+/** A versioned empty layout is a deletion, not a reason to restore an older copy. */
 export function resolveProjectFolderSettings(
   sources: readonly ProjectFolderSettingsSource[],
 ): SidebarProjectFolderSettings {
+  const layout = resolveSidebarProjectLayout(sources.map((source) => source?.sidebarProjectLayout));
+  if (layout) return { folders: layout.folders, assignments: layout.assignments };
+  let legacy: SidebarProjectFolderSettings = { folders: [], assignments: {} };
   for (const source of sources) {
     const settings = sourceToFolderSettings(source);
-    if (settings !== null && projectFolderSettingsHaveEntries(settings)) return settings;
+    if (
+      settings !== null &&
+      projectFolderSettingsHaveEntries(settings) &&
+      (!projectFolderSettingsHaveEntries(legacy) ||
+        compareSidebarProjectLayouts(
+          { ...settings, version: 1, projectOrder: [] },
+          { ...legacy, version: 1, projectOrder: [] },
+        ) > 0)
+    )
+      legacy = settings;
   }
-  return { folders: [], assignments: {} };
-}
-
-/** Client-only folders should be written once every loaded server is still empty. */
-export function shouldLiftProjectFolderSettings(input: {
-  readonly local: SidebarProjectFolderSettings;
-  readonly servers: readonly ProjectFolderSettingsSource[];
-}): boolean {
-  if (!projectFolderSettingsHaveEntries(input.local)) return false;
-  const loaded = input.servers.filter((server) => server != null);
-  return (
-    loaded.length > 0 &&
-    loaded.every((server) => {
-      const settings = sourceToFolderSettings(server);
-      return settings === null || !projectFolderSettingsHaveEntries(settings);
-    })
-  );
+  return legacy;
 }
 
 export function buildProjectRailItems<T extends { projectKey: string }>(

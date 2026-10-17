@@ -79,7 +79,6 @@ export interface CreateThreadInput extends CommandMetadata {
   readonly projectId: ProjectId;
   readonly title: string;
   readonly enabledSkillIds?: import("@t3tools/contracts").EnabledSkillIds;
-  readonly subagentPolicy?: import("@t3tools/contracts").ThreadSubagentPolicy | null;
   readonly automationRun?: import("@t3tools/contracts").ThreadAutomationRun | null;
   readonly modelSelection: ModelSelection;
   readonly runtimeMode: RuntimeMode;
@@ -159,7 +158,6 @@ interface StartThreadBootstrap {
     readonly projectId: ProjectId;
     readonly title: string;
     readonly enabledSkillIds?: import("@t3tools/contracts").EnabledSkillIds;
-    readonly subagentPolicy?: import("@t3tools/contracts").ThreadSubagentPolicy | null;
     readonly automationRun?: import("@t3tools/contracts").ThreadAutomationRun | null;
     readonly modelSelection: ModelSelection;
     readonly runtimeMode: RuntimeMode;
@@ -432,7 +430,6 @@ export const createThread = Effect.fn("EnvironmentCommands.createThread")(functi
     projectId: input.projectId,
     title: input.title,
     ...(input.enabledSkillIds === undefined ? {} : { enabledSkillIds: input.enabledSkillIds }),
-    ...(input.subagentPolicy === undefined ? {} : { subagentPolicy: input.subagentPolicy }),
     ...(input.automationRun === undefined ? {} : { automationRun: input.automationRun }),
     modelSelection: input.modelSelection,
     runtimeMode: input.runtimeMode,
@@ -707,7 +704,6 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       projectId: thread.projectId,
       title: input.titleSeed ?? thread.title,
       ...(thread.enabledSkillIds === undefined ? {} : { enabledSkillIds: thread.enabledSkillIds }),
-      ...(thread.subagentPolicy === undefined ? {} : { subagentPolicy: thread.subagentPolicy }),
       ...(thread.automationRun === undefined ? {} : { automationRun: thread.automationRun }),
       generateTitle: input.titleSeed !== undefined,
       modelSelection: input.modelSelection ?? thread.modelSelection,
@@ -1145,9 +1141,6 @@ export interface AssignThreadSceneryInput extends ThreadCommandInput {
 export interface SetThreadSkillsInput extends ThreadCommandInput {
   readonly enabledSkillIds: import("@t3tools/contracts").EnabledSkillIds;
 }
-export interface SetThreadSubagentPolicyInput extends ThreadCommandInput {
-  readonly subagentPolicy: import("@t3tools/contracts").ThreadSubagentPolicy;
-}
 export const storeThread = Effect.fn("EnvironmentCommands.storeThread")(function* (
   input: StoreThreadInput,
 ) {
@@ -1188,14 +1181,3 @@ export const setThreadSkills = Effect.fn("EnvironmentCommands.setThreadSkills")(
     createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now),
   });
 });
-export const setThreadSubagentPolicy = Effect.fn("EnvironmentCommands.setThreadSubagentPolicy")(
-  function* (input: SetThreadSubagentPolicyInput) {
-    return yield* dispatch({
-      type: "thread.subagent-policy.set",
-      commandId: yield* allocateCommandId(input),
-      threadId: input.threadId,
-      subagentPolicy: input.subagentPolicy,
-      createdAt: input.createdAt ?? DateTime.formatIso(yield* DateTime.now),
-    });
-  },
-);

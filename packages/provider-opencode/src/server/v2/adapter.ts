@@ -216,6 +216,8 @@ interface TurnOwner {
 interface ActiveTurn {
   readonly input: TurnOwner;
   providerTurn: OrchestrationV2ProviderTurn;
+  /** The turn that started this execution on each ancestor thread, before a child is reused. */
+  readonly ownership: ReadonlyMap<string, string>;
   /** Open text and reasoning blocks, keyed `<assistantMessageID>:<kind>:<ordinal>`. */
   readonly texts: Map<string, OpenBlock>;
   readonly tools: Map<string, { readonly name: string; input: Record<string, unknown> }>;
@@ -312,6 +314,7 @@ interface Wake {
   running: boolean;
   /** The background subagents whose end it answers, as its turn's notification names them. */
   readonly reports: Array<BackgroundWorkReport>;
+  readonly owners: ReadonlyArray<ActiveTurn>;
   /** What OpenCode told the model, the continuation's prompt text. */
   readonly detail: string | null;
   /** Stopped, or taken by a user turn: the continuation it asked for is not needed. */
@@ -402,6 +405,7 @@ interface ThreadState {
       readonly childId: string;
       readonly report: BackgroundWorkReport;
       readonly text: string;
+      readonly owners: ReadonlyArray<ActiveTurn>;
     }
   >;
   /**
@@ -924,7 +928,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     // they start, by the session the first of them was called from. Nothing
     // names them, so they no longer route to its thread; they stay here until
     // a Stop of that thread stops them or they are gone.
-    const strays = new Map<string, ThreadState>();
+    const strays = new Map<
+      string,
+      { readonly caller: ThreadState; readonly owners: ReadonlyArray<ActiveTurn> }
+    >();
     // Sessions of these threads with an execution running, seen on the stream.
     const busy = new Set<string>();
     const pending = new Map<RuntimeRequestId, PendingRequest>();
@@ -1280,10 +1287,18 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const makeTurn = (
       owner: TurnOwner,
       providerTurn: OrchestrationV2ProviderTurn,
-      options: { readonly scope: string; readonly awaitingStart: boolean },
+      options: {
+        readonly scope: string;
+        readonly awaitingStart: boolean;
+        readonly parent?: ActiveTurn;
+      },
     ): ActiveTurn => ({
       input: owner,
       providerTurn,
+      ownership: new Map(options.parent?.ownership).set(
+        providerTurn.providerThreadId,
+        providerTurn.id,
+      ),
       texts: new Map(),
       tools: new Map(),
       startedAt: new Map(),
@@ -1645,7 +1660,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           runtimePolicy: subagent.call.turn.input.runtimePolicy,
         },
         providerTurn,
-        { scope: `${child.sessionId}:`, awaitingStart: false },
+        { scope: `${child.sessionId}:`, awaitingStart: false, parent: subagent.call.turn },
       );
       turn.before = subagent.queued;
       subagent.queued = undefined;
@@ -2419,6 +2434,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         events: [],
         running: true,
         reports: delivered.map((entry) => entry.report),
+        owners: delivered.flatMap((entry) => entry.owners),
         detail: delivered.length === 0 ? null : delivered.map((entry) => entry.text).join("\n\n"),
         dropped: false,
         after: delivered.at(-1)?.inboxId,
@@ -2444,6 +2460,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       const childId = stringField(payload.metadata, "childID");
       if (stringField(payload.metadata, "source") !== "subagent" || childId === undefined) return;
       // A stray that reports has ended: no Stop needs to reach it.
+      const stray = strays.get(childId);
       strays.delete(childId);
       const call = [...state.calls.values()].find(
         (candidate) => candidate.child?.sessionId === childId,
@@ -2456,6 +2473,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         inboxId,
         childId,
         text: payload.text,
+        owners: calls.length > 0 ? calls.map((candidate) => candidate.turn) : (stray?.owners ?? []),
         report: {
           kind: "subagent",
           label: call?.title ?? stringField(payload.metadata, "description"),
@@ -2907,7 +2925,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         }
       }
       // Stopped off the lock this reconcile holds; one still running waits for a Stop.
-      for (const thread of new Set([...strays.values()].map(rootOf))) {
+      for (const thread of new Set([...strays.values()].map(({ caller }) => rootOf(caller)))) {
         yield* Effect.forkIn(stopStrays(thread), sessionScope);
       }
       // A request asked while the stream was down was never shown, and the
@@ -3535,14 +3553,14 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
      * call outside the held execution is the thread's, and is left alone.
      */
     const discardWakes = (caller: ThreadState, wakes: ReadonlyArray<Wake>) => {
-      const retired = new Set<string>();
-      const retire = (childId: string) => {
+      const retired = new Map<string, ReadonlyArray<ActiveTurn>>();
+      const retire = (childId: string, owners: ReadonlyArray<ActiveTurn>) => {
         const info = announced.get(childId);
         if (info === undefined) return;
         announced.delete(childId);
         childOwners.delete(childId);
-        strays.set(childId, caller);
-        retired.add(childId);
+        strays.set(childId, { caller, owners });
+        retired.set(childId, owners);
         // OpenCode reports its end to the session that called it; that
         // report answers no turn, so the execution it wakes is stopped. A
         // deeper one reports to a stray, which T3 does not track.
@@ -3550,7 +3568,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       };
       for (const wake of wakes) {
         wake.dropped = true;
-        for (const childId of wake.children) retire(childId);
+        for (const childId of wake.children) retire(childId, wake.owners);
       }
       // Their own subagents, at any depth, were announced live but no call
       // of the thread's names them either.
@@ -3558,7 +3576,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         grew = false;
         for (const [childId, info] of announced) {
           if (info.parentID === undefined || !retired.has(info.parentID)) continue;
-          retire(childId);
+          retire(childId, retired.get(info.parentID)!);
           grew = true;
         }
       }
@@ -3570,9 +3588,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
      * otherwise hold up every event. A stray is forgotten once stopped or
      * gone; one still running waits for the next Stop.
      */
-    const stopStrays = (thread: ThreadState) =>
-      Effect.forEach(
-        [...strays].flatMap(([childId, caller]) => (rootOf(caller) === thread ? [childId] : [])),
+    const stopStrays = (
+      thread: ThreadState,
+      includes: (owners: ReadonlyArray<ActiveTurn>) => boolean = () => true,
+    ) => {
+      const callers = new Set(sessionsOf(thread));
+      return Effect.forEach(
+        [...strays].flatMap(([childId, { caller, owners }]) =>
+          callers.has(caller) && includes(owners) ? [childId] : [],
+        ),
         (childId) =>
           client.session.interrupt({ sessionID: Session.ID.make(childId) }).pipe(
             Effect.asVoid,
@@ -3583,6 +3607,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           ),
         { discard: true },
       );
+    };
 
     /**
      * A user turn that starts while OpenCode runs an execution on its own: the
@@ -3643,8 +3668,23 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
      * so its call stays tracked: the session is not released under it, and
      * the next Stop tries it again.
      */
-    const stopBackground = Effect.fnUntraced(function* (state: ThreadState) {
-      const calls = runningCalls(state).filter((call) => call.background);
+    const stopBackground = Effect.fnUntraced(function* (
+      state: ThreadState,
+      target: OrchestrationV2ProviderTurn,
+    ) {
+      const latest = [...state.providerTurns.values()].at(-1)?.id === target.id;
+      const owningTurn = (owner: ActiveTurn) => {
+        const id = owner.ownership.get(target.providerThreadId);
+        return id === undefined ? undefined : state.providerTurns.get(id);
+      };
+      const includesTurn = (owner: ActiveTurn) => {
+        const turn = owningTurn(owner);
+        return turn !== undefined && turn.ordinal <= target.ordinal;
+      };
+      const includes = (owners: ReadonlyArray<ActiveTurn>) =>
+        latest || (owners.length > 0 && owners.every(includesTurn));
+      const allCalls = runningCalls(state);
+      const calls = allCalls.filter((call) => call.background && includes([call.turn]));
       // Every session under the thread, which a stopped subagent may report to.
       const callers = sessionsOf(state);
       // A subagent whose call ended runs again when OpenCode wakes it to
@@ -3653,6 +3693,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         (caller) =>
           caller.subagent !== undefined &&
           busy.has(caller.sessionId) &&
+          includes([caller.active ?? caller.subagent.call.turn]) &&
           !isOrchestrationV2WorkActive(caller.subagent.call.status),
       );
       // OpenCode announces a child's session before the call's progress names
@@ -3664,6 +3705,41 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         );
       const childrenOf = (call: SubagentCall) =>
         call.child === undefined ? announcedTo(call.state) : [call.child.sessionId];
+      const wakes = callers.flatMap((caller) => caller.wakes);
+      const heldOwners = [
+        ...wakes.map((wake) => wake.owners),
+        ...callers.flatMap((caller) => [...caller.reports.values()].map((report) => report.owners)),
+        ...[...strays.values()].flatMap(({ caller, owners }) =>
+          callers.includes(caller) ? [owners] : [],
+        ),
+      ];
+      // An old Stop cannot cancel an execution shared with a later turn, or
+      // children whose owner the native protocol has not named yet.
+      if (
+        !latest &&
+        (allCalls.some((call) => owningTurn(call.turn) === undefined) ||
+          heldOwners.some(
+            (owners) =>
+              owners.length === 0 ||
+              owners.some((owner) => owningTurn(owner) === undefined) ||
+              (owners.some(includesTurn) && !owners.every(includesTurn)),
+          ) ||
+          calls.some(
+            (call) =>
+              (call.child === undefined && childrenOf(call).length > 0) ||
+              allCalls.some(
+                (other) =>
+                  !includes([other.turn]) &&
+                  other.child !== undefined &&
+                  childrenOf(call).includes(other.child.sessionId),
+              ),
+          ))
+      )
+        return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+          driver,
+          detail:
+            "Cannot stop older OpenCode background work while its execution has a newer or unknown owner",
+        });
       // Each child reports to the session that called it, so its marker goes
       // on that caller's state: the thread's own, or a subagent's for a nested one.
       const children = new Map(
@@ -3705,22 +3781,25 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           // A report already queued starts a follow-up the Stop must end too.
           for (const caller of callers) {
             for (const report of caller.reports.values()) {
-              caller.stoppedChildren.add(report.childId);
+              if (includes(report.owners)) caller.stoppedChildren.add(report.childId);
             }
           }
           // A held wake no turn will take: its execution is stopped, not replayed.
-          const running = state.wakes.some((wake) => wake.running);
-          discardWakes(state, state.wakes.splice(0));
-          if (running) {
-            markUnsettled(state);
-            yield* client.session
-              .interrupt({ sessionID: Session.ID.make(state.sessionId) })
-              .pipe(Effect.timeout(INTERRUPT_TIMEOUT), Effect.ignore({ log: true }));
+          for (const caller of callers) {
+            const selected = caller.wakes.filter((wake) => includes(wake.owners));
+            for (const wake of selected) caller.wakes.splice(caller.wakes.indexOf(wake), 1);
+            discardWakes(caller, selected);
+            if (selected.some((wake) => wake.running)) {
+              markUnsettled(caller);
+              yield* client.session
+                .interrupt({ sessionID: Session.ID.make(caller.sessionId) })
+                .pipe(Effect.timeout(INTERRUPT_TIMEOUT), Effect.ignore({ log: true }));
+            }
           }
         }),
       );
       // Subagents of held executions this or an earlier Stop dropped.
-      yield* stopStrays(state);
+      yield* stopStrays(state, includes);
     });
 
     /**
@@ -4174,11 +4253,13 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const state = threads.get(sessionId);
           if (state === undefined) return;
           const turn = state.active;
+          const target = state.providerTurns.get(interruptInput.providerTurnId);
+          if (target === undefined) return;
           // OpenCode stops a foreground subagent with its parent, but not a
           // background one: a user Stop (`requestRuntimeRestart`) stops those
           // too, and the execution OpenCode starts to report them. A turn
           // interrupted to restart it with new input leaves them running.
-          if (interruptInput.requestRuntimeRestart === true) yield* stopBackground(state);
+          if (interruptInput.requestRuntimeRestart === true) yield* stopBackground(state, target);
           if (turn === undefined || turn.providerTurn.id !== interruptInput.providerTurnId) {
             return;
           }
@@ -4224,6 +4305,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             });
           }
         }).pipe(
+          exclusive(interruptInput.providerThread),
           Effect.mapError((cause) =>
             isProviderAdapterError(cause)
               ? cause

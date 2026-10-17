@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -10,6 +10,14 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   refresh: vi.fn(),
   toast: vi.fn(),
+  clipboard: vi.fn(),
+  cloudEnabled: false,
+  environments: [] as Array<{
+    environmentId: string;
+    label: string;
+    connection: { phase: string };
+    entry: { enabled: boolean; target: { _tag: string } };
+  }>,
   agentSurvey: "ready" as "ready" | "needsSetup",
   candidates: [] as Array<Record<string, unknown>>,
   projects: [] as Array<{ id: string; environmentId: string; workspaceRoot: string }>,
@@ -35,18 +43,10 @@ vi.mock("../../state/entities", () => ({
   useProjects: () => mocks.projects,
   readProjects: () => mocks.projects,
 }));
-vi.mock("../../state/environments", () => {
-  const environment = {
-    environmentId: "test-env",
-    label: "Computer",
-    connection: { phase: "connected" },
-    entry: { enabled: true },
-  };
-  return {
-    useEnvironments: () => ({ environments: [environment] }),
-    usePrimaryEnvironment: () => environment,
-  };
-});
+vi.mock("../../state/environments", () => ({
+  useEnvironments: () => ({ environments: mocks.environments }),
+  usePrimaryEnvironment: () => mocks.environments[0] ?? null,
+}));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
     providersValueAtom: () => [],
@@ -71,8 +71,11 @@ vi.mock("../../onboarding/useProjectScans", () => ({
 }));
 vi.mock("../../connection/onboarding", () => ({ connectPairing: vi.fn() }));
 vi.mock("../../state/terminal", () => ({ terminalEnvironment: {} }));
-vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({ useT3ConnectAuthPrompt: vi.fn() }));
-vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => false }));
+vi.mock("@clerk/react", () => ({ useAuth: () => ({ isLoaded: true, isSignedIn: true }) }));
+vi.mock("../clerk/useT3ConnectAuthPrompt", () => ({
+  useT3ConnectAuthPrompt: () => ({ openAuthPrompt: vi.fn() }),
+}));
+vi.mock("../../cloud/publicConfig", () => ({ hasCloudPublicConfig: () => mocks.cloudEnabled }));
 vi.mock("../ThreadTerminalDrawer", () => ({ TerminalViewport: () => null }));
 vi.mock("../settings/ChatGptWelcomeCoordinator", () => ({ ChatGptWelcomeCoordinator: () => null }));
 vi.mock("../settings/CodexSetupSection", () => ({
@@ -80,7 +83,10 @@ vi.mock("../settings/CodexSetupSection", () => ({
   AddManagedCodexAccountDialog: () => null,
 }));
 vi.mock("../cloud/CloudEnvironmentConnectList", () => ({
-  CloudEnvironmentConnectRows: () => null,
+  CloudEnvironmentConnectRows: ({ onDiscoveryReady }: { onDiscoveryReady: () => void }) => {
+    useEffect(onDiscoveryReady, [onDiscoveryReady]);
+    return null;
+  },
 }));
 vi.mock("../ui/toast", () => ({
   toastManager: { add: mocks.toast, close: vi.fn(), update: vi.fn() },
@@ -106,6 +112,20 @@ beforeEach(() => {
     value: () => [],
   });
   mocks.agentSurvey = "ready";
+  mocks.cloudEnabled = false;
+  mocks.environments = [
+    {
+      environmentId: "test-env",
+      label: "Computer",
+      connection: { phase: "connected" },
+      entry: { enabled: true, target: { _tag: "PrimaryConnectionTarget" } },
+    },
+  ];
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: mocks.clipboard },
+  });
+  mocks.clipboard.mockResolvedValue(undefined);
   mocks.candidates = [
     {
       path: "/project",
@@ -147,6 +167,10 @@ async function click(label: string) {
 
 function currentStep() {
   return document.querySelector("[data-trailhead-step]")?.getAttribute("data-trailhead-step");
+}
+
+function continueButton() {
+  return container.querySelector<HTMLButtonElement>('[data-trailhead="card-footer"] button');
 }
 
 it("walks past the ridge when agents are ready and lands on the imported project", async () => {
@@ -216,4 +240,52 @@ it("lets the summit retry when opening the app fails after saving", async () => 
   );
   await click("Open T3 Pretty");
   expect(onDone).toHaveBeenCalledTimes(2);
+});
+
+it.each(["available", "offline", "reconnecting", "unsupported"])(
+  "continues setup on the connected computer when a saved computer is %s",
+  async (phase) => {
+    mocks.environments.push({
+      environmentId: "saved-remote",
+      label: "Saved computer",
+      connection: { phase },
+      entry: { enabled: true, target: { _tag: "BearerConnectionTarget" } },
+    });
+    await act(async () => root.render(<Trailhead localAvailable onDone={vi.fn()} />));
+    expect(continueButton()?.disabled).toBe(false);
+    await act(async () => continueButton()!.click());
+    expect(currentStep()).toBe("saddle");
+    await click("Import 1 project");
+    expect(mocks.importThreads.mock.calls.map(([input]) => input.environmentId)).toEqual([
+      "test-env",
+    ]);
+  },
+);
+
+it("waits for a newly selected computer's first connection, then continues when it connects", async () => {
+  const remote = {
+    environmentId: "new-remote",
+    label: "New computer",
+    connection: { phase: "connecting" },
+    entry: { enabled: true, target: { _tag: "BearerConnectionTarget" } },
+  };
+  mocks.environments.push(remote);
+  await act(async () => root.render(<Trailhead localAvailable onDone={vi.fn()} />));
+  expect(continueButton()?.disabled).toBe(true);
+  remote.connection.phase = "connected";
+  mocks.environments = [...mocks.environments];
+  await act(async () => root.render(<Trailhead localAvailable onDone={vi.fn()} />));
+  await click("Agents are ready — pick projects");
+  expect(currentStep()).toBe("saddle");
+});
+
+it.each(["connect", "pair"])("copies the fork CLI for %s setup", async (command) => {
+  mocks.cloudEnabled = command === "connect";
+  await act(async () => root.render(<Trailhead localAvailable={false} onDone={vi.fn()} />));
+  const copy = container.querySelector<HTMLButtonElement>('button[aria-label="Copy command"]');
+  expect(copy).not.toBeNull();
+  await act(async () => copy!.click());
+  expect(mocks.clipboard).toHaveBeenCalledWith(
+    expect.stringMatching(new RegExp(`^npx --yes --package https://.+/t3\\.tgz t3 ${command}$`)),
+  );
 });

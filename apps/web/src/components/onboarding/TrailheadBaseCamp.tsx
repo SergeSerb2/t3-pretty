@@ -1,5 +1,6 @@
 import { useAuth } from "@clerk/react";
 import type { EnvironmentId, ServerProvider } from "@t3tools/contracts";
+import { CONNECT_BRANDING, forkCliCommand } from "@t3tools/shared/connectBranding";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -9,10 +10,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { openClerkGate, useClerkGateOpen } from "../../cloud/clerkGate";
 import { hasCloudPublicConfig } from "../../cloud/publicConfig";
+import { connectBrowserAuthHandoffUrl } from "../../cloud/browserAuth";
 import { connectPairing } from "../../connection/onboarding";
 import { cn } from "../../lib/utils";
 import { getOnboardingProviderState } from "../../onboarding/providerReadiness.logic";
-import { isOnboardingRelayEnvironment } from "../../onboarding/targetEnvironment.logic";
+import {
+  isOnboardingRelayEnvironment,
+  resolveOnboardingSetup,
+} from "../../onboarding/targetEnvironment.logic";
 import { resolveStepAfterBaseCamp } from "../../onboarding/trailhead.logic";
 import type { useAgentSurveys } from "../../onboarding/useAgentSurveys";
 import type { useProjectScans } from "../../onboarding/useProjectScans";
@@ -72,18 +77,16 @@ export function TrailheadBaseCamp({
   const [isPairing, setIsPairing] = useState(false);
   const [moreOpen, setMoreOpen] = useState(!localAvailable);
   const selected = environments.filter((environment) => selectedIds.has(environment.environmentId));
-  const ready =
-    selected.length > 0 &&
-    selected.every((environment) => environment.connection.phase === "connected");
+  const { ready } = resolveOnboardingSetup(environments, selectedIds);
   const next = resolveStepAfterBaseCamp(agentSurveys.map((entry) => entry.survey));
   // T3 Connect computers are listed in the panel below, not the ledger. Keep
-  // it open while one of them still holds up Continue, so the blocker is
+  // it open while a first connection still holds up Continue, so the blocker is
   // visible and can be unchecked.
   const relayPending =
     cloudEnabled &&
     selected.some(
       (environment) =>
-        isOnboardingRelayEnvironment(environment) && environment.connection.phase !== "connected",
+        isOnboardingRelayEnvironment(environment) && environment.connection.phase === "connecting",
     );
   const continueRef = useRef<HTMLButtonElement>(null);
 
@@ -333,8 +336,10 @@ function ConnectAccountOption({
         onClick={() => openClerkGate({ promptSignIn: true })}
       >
         <CloudIcon className="size-4" />
-        <span className="flex-1 text-left">T3 Connect</span>
-        <span className="text-xs text-muted-foreground">Sign in</span>
+        <span className="flex-1 text-left">{CONNECT_BRANDING.connectName}</span>
+        <span className="text-xs text-muted-foreground">
+          {connectBrowserAuthHandoffUrl() !== null ? "Open web app" : "Sign in"}
+        </span>
       </Button>
     );
   }
@@ -381,7 +386,7 @@ function SignedInConnectOption({
           render={<Button variant="ghost" size="sm-multiline" className="w-full justify-start" />}
         >
           <CloudIcon className="size-4" />
-          <span className="flex-1 text-left">T3 Connect</span>
+          <span className="flex-1 text-left">{CONNECT_BRANDING.connectName}</span>
           <span className="text-xs text-muted-foreground">
             {!isLoaded
               ? "Loading sign-in…"
@@ -412,7 +417,7 @@ function SignedInConnectOption({
             <p className="text-sm text-muted-foreground">
               Run this on each computer you want to bring along, and keep T3 Pretty running there.
             </p>
-            <TrailheadCommand command="npx t3 connect" className="mt-2" />
+            <TrailheadCommand command={forkCliCommand("connect")} className="mt-2" />
           </div>
         </CollapsiblePanel>
       </Collapsible>
@@ -521,7 +526,7 @@ function PairingOption({
               No link yet? Run this on the computer with your code. Add{" "}
               <code className="font-mono">--tailscale</code> to pair over your tailnet.
             </p>
-            <TrailheadCommand command="npx t3 pair" />
+            <TrailheadCommand command={forkCliCommand("pair")} />
           </form>
         </CollapsiblePanel>
       </Collapsible>

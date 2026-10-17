@@ -29,21 +29,8 @@ class T3KeyboardCommandsView(
   var enabledCommands = emptySet<String>()
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-    val command = commandFor(event)?.takeIf { enabledCommands.contains(it) }
+    val command = keyboardCommandFor(event)?.takeIf { enabledCommands.contains(it) }
     if (command != null) onCommand(mapOf("command" to command))
     return command != null || super.dispatchKeyEvent(event)
-  }
-
-  private fun commandFor(event: KeyEvent): String? {
-    if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0 || !event.isCtrlPressed) {
-      return null
-    }
-    return when {
-      event.keyCode == KeyEvent.KEYCODE_C && event.isShiftPressed && !event.isAltPressed ->
-        "copyThreadReference"
-      event.keyCode == KeyEvent.KEYCODE_H && event.isShiftPressed && !event.isAltPressed ->
-        "cycleHost"
-      else -> null
-    }
   }
 }

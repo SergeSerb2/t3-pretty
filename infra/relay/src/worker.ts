@@ -27,6 +27,7 @@ import {
   withoutCapturedParentSpan,
 } from "./http/Api.ts";
 import * as RelayHttpApi from "./http/Api.ts";
+import * as PeersHttp from "./http/Peers.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./zone.ts";
 import { RelayObservability } from "./observability.ts";
 import * as Observability from "./observability.ts";
@@ -96,6 +97,7 @@ const layerHttpPlatformNotSupported = Layer.succeed(HttpPlatform.HttpPlatform, {
 });
 
 const layerRelayApi = Layer.mergeAll(
+  PeersHttp.layer,
   RelayHttpApi.layerHealthApi,
   RelayHttpApi.layerMetadataApi,
   RelayHttpApi.layerMobileApi,

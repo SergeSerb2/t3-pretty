@@ -4,6 +4,7 @@ import { usePaintedAppearance } from "~/hooks/usePaintedAppearance";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { getSyntaxHighlighterPromise } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
+import { shouldHighlightCodeBlock } from "../composerCodeBlockHighlight";
 
 export function HighlightedCode(props: {
   readonly className?: string | undefined;
@@ -12,6 +13,11 @@ export function HighlightedCode(props: {
 }) {
   const resolvedTheme = usePaintedAppearance();
   const themeName = resolveDiffThemeName(resolvedTheme);
+  // Tool output can be huge, and tokenizing it runs synchronously on the main
+  // thread. Past the composer's measured cap it stays plain text.
+  if (!shouldHighlightCodeBlock(props.code)) {
+    return <pre className={props.className}>{props.code}</pre>;
+  }
   return (
     <Suspense fallback={<pre className={props.className}>{props.code}</pre>}>
       <HighlightedCodeInner

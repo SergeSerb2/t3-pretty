@@ -10,6 +10,8 @@ export function shouldDisableHttpServerTracing(rawUrl: string): boolean {
   }
   return (
     pathname === "/ws" ||
+    pathname === "/share" ||
+    pathname.startsWith("/share/") ||
     pathname === SENSITIVE_ASSET_PATH_PREFIX.slice(0, -1) ||
     pathname.startsWith(SENSITIVE_ASSET_PATH_PREFIX)
   );

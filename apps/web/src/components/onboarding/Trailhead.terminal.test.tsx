@@ -149,6 +149,7 @@ vi.mock("../settings/CodexSetupSection", () => ({
 }));
 vi.mock("../settings/providerDriverMeta", () => ({
   providerClients: { get: (driver: string) => ({ label: driver }) },
+  getDriverOption: (driver: string) => ({ label: driver }),
 }));
 vi.mock("../settings/providerStatus", () => ({
   getProviderSummary: () => ({ headline: "Setup required" }),

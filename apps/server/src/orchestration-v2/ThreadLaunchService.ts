@@ -78,7 +78,6 @@ export interface ThreadLaunchInput {
   readonly threadId?: ThreadId;
   readonly reuseExistingThread?: boolean;
   readonly enabledSkillIds?: import("@t3tools/contracts").OrchestrationV2AppThread["enabledSkillIds"];
-  readonly subagentPolicy?: import("@t3tools/contracts").OrchestrationV2AppThread["subagentPolicy"];
   readonly automationRun?: import("@t3tools/contracts").OrchestrationV2AppThread["automationRun"];
   readonly projectId: ProjectId;
   readonly title: string;
@@ -896,7 +895,6 @@ const make = Effect.gen(function* () {
                 ...(input.enabledSkillIds === undefined
                   ? {}
                   : { enabledSkillIds: input.enabledSkillIds }),
-                ...(input.subagentPolicy == null ? {} : { subagentPolicy: input.subagentPolicy }),
                 modelSelection: input.modelSelection,
                 runtimeMode: input.runtimeMode,
                 interactionMode: input.interactionMode,

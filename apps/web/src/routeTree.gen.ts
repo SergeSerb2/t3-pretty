@@ -34,7 +34,6 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings.conne
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppsRouteImport } from './routes/settings.apps'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
-import { Route as SettingsAgentsRouteImport } from './routes/settings.agents'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
@@ -167,11 +166,6 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsAgentsRoute = SettingsAgentsRouteImport.update({
-  id: '/agents',
-  path: '/agents',
-  getParentRoute: () => SettingsRoute,
-} as any)
 const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   id: '/projects/$projectKey',
   path: '/projects/$projectKey',
@@ -216,7 +210,6 @@ export interface FileRoutesByFullPath {
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -248,7 +241,6 @@ export interface FileRoutesByTo {
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -283,7 +275,6 @@ export interface FileRoutesById {
   '/_chat/new': typeof ChatNewRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
-  '/settings/agents': typeof SettingsAgentsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/apps': typeof SettingsAppsRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -319,7 +310,6 @@ export interface FileRouteTypes {
     | '/new'
     | '/pull-requests'
     | '/projects/$projectKey'
-    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/apps'
     | '/settings/archived'
@@ -351,7 +341,6 @@ export interface FileRouteTypes {
     | '/new'
     | '/pull-requests'
     | '/projects/$projectKey'
-    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/apps'
     | '/settings/archived'
@@ -385,7 +374,6 @@ export interface FileRouteTypes {
     | '/_chat/new'
     | '/_chat/pull-requests'
     | '/projects/$projectKey'
-    | '/settings/agents'
     | '/settings/appearance'
     | '/settings/apps'
     | '/settings/archived'
@@ -598,13 +586,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
-    '/settings/agents': {
-      id: '/settings/agents'
-      path: '/agents'
-      fullPath: '/settings/agents'
-      preLoaderRoute: typeof SettingsAgentsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     '/projects/$projectKey': {
       id: '/projects/$projectKey'
       path: '/projects/$projectKey'
@@ -619,19 +600,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatPullRequestsRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/automations/$environmentId/$automationId': {
-      id: '/automations/$environmentId/$automationId'
-      path: '/automations/$environmentId/$automationId'
-      fullPath: '/automations/$environmentId/$automationId'
-      preLoaderRoute: typeof AutomationsEnvironmentIdAutomationIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_chat/new': {
       id: '/_chat/new'
       path: '/new'
       fullPath: '/new'
       preLoaderRoute: typeof ChatNewRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/automations/$environmentId/$automationId': {
+      id: '/automations/$environmentId/$automationId'
+      path: '/automations/$environmentId/$automationId'
+      fullPath: '/automations/$environmentId/$automationId'
+      preLoaderRoute: typeof AutomationsEnvironmentIdAutomationIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
@@ -669,7 +650,6 @@ const ChatRouteChildren: ChatRouteChildren = {
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
-  SettingsAgentsRoute: typeof SettingsAgentsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsAppsRoute: typeof SettingsAppsRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
@@ -690,7 +670,6 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
-  SettingsAgentsRoute: SettingsAgentsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsAppsRoute: SettingsAppsRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,

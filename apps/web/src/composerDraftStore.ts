@@ -24,7 +24,6 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
-  ThreadSubagentPolicy,
   SnapShotSource,
 } from "@t3tools/contracts";
 import {
@@ -62,8 +61,6 @@ import {
   ensureInlineContextReferences,
   formatInlineContextReference,
   removeInlineContextReference,
-  toComposerContextId,
-  toKindScopedComposerContextId,
 } from "./lib/composerContextReferences";
 import {
   fileContextReference,
@@ -79,7 +76,11 @@ import { persist, type PersistStorage, type StorageValue } from "zustand/middlew
 import { useShallow } from "zustand/react/shallow";
 import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
-import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+import {
+  replaceComposerContextReferences,
+  toComposerContextId,
+  toKindScopedComposerContextId,
+} from "@t3tools/shared/composerContextReferences";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
@@ -434,7 +435,6 @@ export interface ComposerThreadDraftState {
    * "no per-thread picks" — global settings-enabled skills never land here.
    */
   enabledSkillIds?: ReadonlyArray<SkillId> | undefined;
-  subagentPolicy?: ThreadSubagentPolicy | undefined;
 }
 
 /**
@@ -672,10 +672,6 @@ interface ComposerDraftStoreState {
   setEnabledSkillIds: (
     threadRef: ComposerThreadTarget,
     enabledSkillIds: ReadonlyArray<SkillId> | null | undefined,
-  ) => void;
-  setSubagentPolicy: (
-    threadRef: ComposerThreadTarget,
-    policy: ThreadSubagentPolicy | null | undefined,
   ) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => boolean;
   /** Returns the ids the draft accepted; duplicates and over-cap attachments are left out. */
@@ -3537,42 +3533,6 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...base,
               enabledSkillIds: nextEnabledSkillIds,
-            };
-            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
-            if (shouldRemoveDraft(nextDraft)) {
-              delete nextDraftsByThreadKey[threadKey];
-            } else {
-              nextDraftsByThreadKey[threadKey] = nextDraft;
-            }
-            return { draftsByThreadKey: nextDraftsByThreadKey };
-          });
-        },
-        setSubagentPolicy: (threadRef, policy) => {
-          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
-          if (threadKey.length === 0) {
-            return;
-          }
-          const nextPolicy = policy == null || policy.mode === "inherit" ? undefined : policy;
-          set((state) => {
-            const existing = state.draftsByThreadKey[threadKey];
-            if (!existing && nextPolicy === undefined) {
-              return state;
-            }
-            const base = existing ?? createEmptyThreadDraft();
-            const currentPolicy = base.subagentPolicy;
-            const isUnchanged =
-              (currentPolicy === undefined && nextPolicy === undefined) ||
-              (currentPolicy !== undefined &&
-                nextPolicy !== undefined &&
-                currentPolicy.mode === nextPolicy.mode &&
-                JSON.stringify(currentPolicy.child ?? null) ===
-                  JSON.stringify(nextPolicy.child ?? null));
-            if (isUnchanged) {
-              return state;
-            }
-            const nextDraft: ComposerThreadDraftState = {
-              ...base,
-              subagentPolicy: nextPolicy,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {

@@ -1,3 +1,4 @@
+import { openThreadShareDialog } from "./ThreadShareDialog";
 import { ChevronDownIcon } from "lucide-react";
 import { ChevronRightIcon } from "lucide-react";
 import { subscribeSecondTick } from "../lib/secondTicker";
@@ -130,7 +131,11 @@ import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  getProjectOrderKey,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
 import {
   buildSidebarProjectSnapshots,
   projectGroupsSpanEnvironments,
@@ -2690,7 +2695,6 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 
 export default function Sidebar() {
   const projects = useProjects();
-  const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
   const { isMobile, setOpenMobile, peekNow } = useSidebar();
@@ -2702,6 +2706,7 @@ export default function Sidebar() {
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectFolders = useSidebarProjectFolders();
+  const projectOrder = projectFolders.projectOrder;
   const {
     settleThread,
     unsettleThread,
@@ -2828,11 +2833,14 @@ export default function Sidebar() {
         preferredIds: projectOrder,
         getId: getProjectOrderKey,
         getPreferenceIds: (project) => [
+          deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings, {
+            groupScratchProjects: true,
+          }),
           getProjectOrderKey(project),
           legacyProjectCwdPreferenceKey(project.workspaceRoot),
         ],
       }),
-    [projectOrder, projects],
+    [projectOrder, projects, projectGroupingSettings],
   );
   const unsortedProjectGroups = useMemo(
     () =>
@@ -3044,7 +3052,6 @@ export default function Sidebar() {
       });
     },
   );
-
 
   // Keep a dropped row at its destination while its server applies the
   // lifecycle command and any order-key writes. The next pickup waits for
@@ -5146,6 +5153,9 @@ export default function Sidebar() {
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
+                sharing:
+                  serverConfigs.get(thread.environmentId)?.environment.capabilities
+                    .threadSharing === true,
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: supportsSnooze,
@@ -5290,6 +5300,9 @@ export default function Sidebar() {
             if (thread.branch) {
               copyBranchToClipboard(thread.branch, { branch: thread.branch });
             }
+            return;
+          case "share-thread":
+            openThreadShareDialog(threadRef);
             return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });

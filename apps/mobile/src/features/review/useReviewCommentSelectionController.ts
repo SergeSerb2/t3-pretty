@@ -37,6 +37,15 @@ export function useReviewCommentSelectionController(input: {
   const activeCommentTarget = useReviewCommentTarget();
   const [pendingNativeCommentSelection, setPendingNativeCommentSelection] =
     useState<PendingNativeCommentSelection | null>(null);
+  // A refresh can reuse row IDs while replacing the source lines. Drop the
+  // anchor before rendering actions or accepting an end line from a new file.
+  if (
+    pendingNativeCommentSelection &&
+    nativeReviewDiffData.commentTargetsByRowId.get(pendingNativeCommentSelection.rowId)?.lines !==
+      pendingNativeCommentSelection.lines
+  ) {
+    setPendingNativeCommentSelection(null);
+  }
 
   const openReviewCommentSheet = useCallback(() => {
     if (!environmentId || !threadId) {
@@ -108,13 +117,7 @@ export function useReviewCommentSelectionController(input: {
     return () => {
       clearReviewCommentTarget();
     };
-  }, [selectedSection?.id]);
-
-  useEffect(() => {
-    if (activeCommentTarget === null) {
-      setPendingNativeCommentSelection(null);
-    }
-  }, [activeCommentTarget]);
+  }, [environmentId, selectedSection?.id, threadId]);
 
   const onPressLine = useCallback(
     (
@@ -150,8 +153,10 @@ export function useReviewCommentSelectionController(input: {
 
       if (
         pendingNativeCommentSelection &&
+        pendingNativeCommentSelection.sectionId === selectedSection.id &&
         pendingNativeCommentSelection.sectionTitle === selectedSection.title &&
-        pendingNativeCommentSelection.filePath === target.filePath
+        pendingNativeCommentSelection.filePath === target.filePath &&
+        pendingNativeCommentSelection.lines === target.lines
       ) {
         setReviewCommentTarget(
           buildReviewCommentTarget(
@@ -165,6 +170,9 @@ export function useReviewCommentSelectionController(input: {
             target.lineIndex,
           ),
         );
+        // The anchor belongs only to an unfinished range. Clearing it here
+        // avoids reusing it after dismissal, without erasing a new long press.
+        setPendingNativeCommentSelection(null);
         return;
       }
 

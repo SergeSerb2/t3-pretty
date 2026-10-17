@@ -228,6 +228,7 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import {
   derivePhysicalProjectKey,
   deriveProjectGroupingOverrideKey,
+  deriveLogicalProjectKeyFromSettings,
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
@@ -3235,8 +3236,6 @@ export default function LegacySidebar() {
   const sidebarThreads = useThreadShells();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const threadLastVisitedAtById = useUiStateStore((store) => store.threadLastVisitedAtById);
-  const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const reorderProjects = useUiStateStore((store) => store.reorderProjects);
   const navigate = useNavigate();
   const sidebarThreadSortOrder = useClientSettings((s) => s.sidebarThreadSortOrder);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -3247,6 +3246,7 @@ export default function LegacySidebar() {
   const { archiveThread, deleteThread, markThreadUnread } = useThreadActions();
   const { isMobile, setOpenMobile, open, peekFlyout, peekNow } = useSidebar();
   const projectFolders = useSidebarProjectFolders();
+  const projectOrder = projectFolders.projectOrder;
   const routeTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -3316,11 +3316,14 @@ export default function LegacySidebar() {
       preferredIds: projectOrder,
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
+        deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings, {
+          groupScratchProjects: true,
+        }),
         getProjectOrderKey(project),
         legacyProjectCwdPreferenceKey(project.workspaceRoot),
       ],
     });
-  }, [projectOrder, projects]);
+  }, [projectOrder, projects, projectGroupingSettings]);
 
   // Build a mapping from physical project key → logical project key for
   // cross-environment grouping.  Projects that share a repositoryIdentity
@@ -3499,13 +3502,13 @@ export default function LegacySidebar() {
       const activeProject = sidebarProjects.find((project) => project.projectKey === active.id);
       const overProject = sidebarProjects.find((project) => project.projectKey === over.id);
       if (!activeProject || !overProject) return;
-      const activeMemberKeys = activeProject.memberProjects.map(
-        (member) => member.physicalProjectKey,
+      projectFolders.reorderProjects(
+        sidebarProjects.map((project) => project.projectKey),
+        [activeProject.projectKey],
+        [overProject.projectKey],
       );
-      const overMemberKeys = overProject.memberProjects.map((member) => member.physicalProjectKey);
-      reorderProjects(orderedProjects.map(getProjectOrderKey), activeMemberKeys, overMemberKeys);
     },
-    [orderedProjects, sidebarProjectSortOrder, reorderProjects, sidebarProjects],
+    [sidebarProjectSortOrder, projectFolders, sidebarProjects],
   );
 
   const handleProjectDragStart = useCallback(

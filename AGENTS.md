@@ -120,8 +120,8 @@ These instructions guide agents when they run; they do not create a background u
 ## Pull requests
 
 This fork lives on **Cursor Origin**. The git remote named `origin` is
-`https://origin.cursor.com/serbinenko/t3-pretty.git`. That is the only place
-commits and pull requests for T3 Pretty go.
+`https://origin.cursor.com/serbinenko/t3-pretty.git`. All development commits
+and pull requests for T3 Pretty go there.
 
 GitHub (`SergeSerb2/t3-pretty`, and any local `github` remote) contains only
 public stable snapshots cut manually by the maintainer. It is not a development

@@ -1,3 +1,4 @@
+import * as ThreadSharing from "../../../sharing/ThreadSharing.ts";
 import { SecretRequestBroker } from "../../SecretRequestBroker.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
@@ -89,6 +90,7 @@ it.effect("production mcp layer lists worktree tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const layerRoutes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.mock(ThreadSharing.ThreadSharing)({})),
         Layer.provide(McpSessionRegistry.layer),
         Layer.provide(Layer.mock(SecretRequestBroker)({})),
       );
@@ -153,6 +155,16 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       // than replacing them.
       expect(toolNames).toContain("preview_status");
       expect(toolNames).toContain("delegate_task");
+      expect(toolNames).toContain("t3_remote_connections");
+      expect(toolNames).toContain("t3_remote_threads");
+      expect(toolNames).toContain("t3_remote_send");
+      expect(
+        tools.find((tool) => tool.name === "t3_remote_connections")?.annotations,
+      ).toMatchObject({
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+      });
       // Capability-specific endpoints keep their tools off the base server, where
       // a credential without that capability could only fail to call them.
       expect(toolNames).not.toContain("computer_screenshot");

@@ -74,7 +74,6 @@ import {
 } from "./providerRuntime.ts";
 import { ThreadSceneryAssignment, ThreadSceneryAssignRequest } from "./threadCustomization.ts";
 import { EnabledSkillIds } from "./skills.ts";
-import { ThreadSubagentPolicy } from "./subagentPolicy.ts";
 import { AutomationShell, ThreadAutomationRun } from "./automations.ts";
 import { AutomationId } from "./baseSchemas.ts";
 import { UserInputSecretQuestion } from "./providerRuntime.ts";
@@ -416,7 +415,6 @@ export const OrchestrationV2AppThread = Schema.Struct({
   storedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   enabledSkillIds: Schema.optional(EnabledSkillIds),
-  subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   liveHeadline: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   planProgress: Schema.optional(
@@ -2088,7 +2086,6 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   storedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
   enabledSkillIds: Schema.optional(EnabledSkillIds),
-  subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   liveHeadline: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   planProgress: Schema.optional(
@@ -2847,16 +2844,8 @@ export const OrchestrationV2Command = Schema.Union([
     createdAt: IsoDateTime,
   }),
   Schema.Struct({
-    type: Schema.Literal("thread.subagent-policy.set"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    subagentPolicy: ThreadSubagentPolicy,
-    createdAt: IsoDateTime,
-  }),
-  Schema.Struct({
     type: Schema.Literal("thread.create"),
     enabledSkillIds: Schema.optional(EnabledSkillIds),
-    subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
     automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
     ...OrchestrationV2CreationFields,
     commandId: CommandId,
@@ -3002,7 +2991,6 @@ export const OrchestrationV2Command = Schema.Union([
     storedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
     scenery: Schema.optional(Schema.NullOr(ThreadSceneryAssignment)),
     enabledSkillIds: Schema.optional(EnabledSkillIds),
-    subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
     title: Schema.optional(TrimmedNonEmptyString),
     /** Kick off (true) or abandon (false) an async title regeneration. */
     regenerateTitle: Schema.optional(Schema.Boolean),
@@ -3467,7 +3455,6 @@ export type OrchestrationV2ArchivedShellStreamItem =
 
 export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   enabledSkillIds: Schema.optional(EnabledSkillIds),
-  subagentPolicy: Schema.optional(Schema.NullOr(ThreadSubagentPolicy)),
   automationRun: Schema.optional(Schema.NullOr(ThreadAutomationRun)),
   commandId: CommandId,
   creationSource: Schema.optional(OrchestrationV2CreationSource),

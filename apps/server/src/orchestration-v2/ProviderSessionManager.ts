@@ -173,6 +173,8 @@ export interface ProviderSessionManagerV2Shape {
   >;
   /** Whether the session's runtime is running. Unlike `get`, not activity. */
   readonly isLive: (providerSessionId: ProviderSessionId) => Effect.Effect<boolean>;
+  /** Whether any live runtime of one provider instance is running a turn. */
+  readonly isInstanceBusy: (instanceId: ProviderInstanceId) => Effect.Effect<boolean>;
   readonly close: (
     providerSessionId: ProviderSessionId,
   ) => Effect.Effect<void, ProviderSessionManagerV2Error>;
@@ -622,12 +624,15 @@ export const layerWithOptions = (
           );
         });
 
-      const closeSubscribers = (entry: LiveSessionEntry) =>
+      // Server shutdown interrupts subscribers rather than ending them: a
+      // cleanly ended stream without a terminal fails its run, while an
+      // interrupted one leaves run settlement to restart recovery.
+      const interruptSubscribers = (entry: LiveSessionEntry) =>
         Effect.gen(function* () {
           const subscribers = yield* Ref.getAndSet(entry.eventSubscribers, new Map());
           yield* Effect.forEach(
             subscribers.values(),
-            (queue) => Queue.clear(queue).pipe(Effect.andThen(Queue.end(queue))),
+            (queue) => Queue.clear(queue).pipe(Effect.andThen(Queue.interrupt(queue))),
             { discard: true },
           );
         });
@@ -1107,7 +1112,7 @@ export const layerWithOptions = (
                   if (input.gracefulSubscribers === true) {
                     yield* endSubscribers(entry);
                   } else if (input.reason === "server_shutdown") {
-                    yield* closeSubscribers(entry);
+                    yield* interruptSubscribers(entry);
                   } else {
                     yield* failSubscribers(
                       entry,
@@ -2139,15 +2144,17 @@ export const layerWithOptions = (
                 }).pipe(logReleaseFailure(entry.runtime.providerSessionId));
                 return;
               }
-              const cause = Exit.isFailure(exit)
-                ? exit.cause
-                : Cause.fail(
-                    new ProviderAdapter.ProviderAdapterEventStreamError({
-                      driver: entry.runtime.driver,
-                      providerSessionId: entry.runtime.providerSessionId,
-                      cause: "Provider event stream ended unexpectedly.",
-                    }),
-                  );
+              // Subscribers read an interrupt as server shutdown, so keep it for that.
+              const cause =
+                Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)
+                  ? exit.cause
+                  : Cause.fail(
+                      new ProviderAdapter.ProviderAdapterEventStreamError({
+                        driver: entry.runtime.driver,
+                        providerSessionId: entry.runtime.providerSessionId,
+                        cause: "Provider event stream ended unexpectedly.",
+                      }),
+                    );
               yield* publishToSubscribers(entry.eventSubscribers, {
                 type: "failure",
                 cause,
@@ -2394,6 +2401,14 @@ export const layerWithOptions = (
         isLive: (providerSessionId) =>
           Ref.get(sessions).pipe(
             Effect.map((current) => current.has(sessionKey(providerSessionId))),
+          ),
+        isInstanceBusy: (instanceId) =>
+          Ref.get(sessions).pipe(
+            Effect.map((current) =>
+              [...current.values()].some(
+                (entry) => entry.runtime.instanceId === instanceId && entry.busyTurns.size > 0,
+              ),
+            ),
           ),
         get: (providerSessionId) =>
           Effect.gen(function* () {

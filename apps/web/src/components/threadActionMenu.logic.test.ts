@@ -50,6 +50,18 @@ function ids(state: ThreadActionMenuState): string[] {
 }
 
 describe("buildThreadActionMenuItems", () => {
+  it("offers public sharing only on supporting servers and requires operate access", () => {
+    expect(visibleIds(baseState)).not.toContain("share-thread");
+    for (const surface of ["sidebar", "header"] as const) {
+      const state = { ...baseState, surface, supports: { ...baseState.supports, sharing: true } };
+      expect(visibleIds(state)).toContain("share-thread");
+      expect(
+        buildThreadActionMenuItems({ ...state, canOperate: false }).find(
+          (item) => item.id === "share-thread",
+        )?.disabled,
+      ).toBe(true);
+    }
+  });
   it("keeps the sidebar residual: no settle or snooze, nested copy", () => {
     expect(visibleIds(baseState)).toEqual([
       "pin",

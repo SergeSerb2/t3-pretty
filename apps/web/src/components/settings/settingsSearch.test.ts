@@ -12,6 +12,7 @@ import {
   searchableSetting,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
+  SETTINGS_SECTION_LABELS,
   type SettingsSearchItem,
 } from "./settingsSearch";
 
@@ -47,6 +48,17 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it("omits the retired Agents page and controls from navigation and search", () => {
+    expect(SETTINGS_SECTION_LABELS).not.toHaveProperty("/settings/agents");
+    for (const query of ["agents", "use subagents", "default child model"]) {
+      expect(searchSettings(query)).not.toContainEqual(
+        expect.objectContaining({ to: "/settings/agents" }),
+      );
+    }
+    expect(SETTINGS_SEARCH_ITEMS.map((item) => item.id)).not.toContain("subagents-enabled");
+    expect(SETTINGS_SEARCH_ITEMS.map((item) => item.id)).not.toContain("subagents-default-child");
+  });
+
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
     "finds environment telemetry settings for %s",
     (query) => {

@@ -8,20 +8,25 @@ import {
   type ProviderInstanceId,
 } from "@t3tools/contracts";
 
-import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerProvidersAtom,
+  serverEnvironment,
+} from "../state/server";
 import { usePrimaryEnvironment } from "../state/environments";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
   canOneClickUpdateProviderCandidate,
-  collectProviderUpdateCandidates,
+  collectPromptedProviderUpdateCandidates,
   collectUpdatedProviderSnapshots,
   firstFailedProviderUpdateMessage,
   getProviderUpdateInitialToastView,
   getProviderUpdateProgressToastView,
   getProviderUpdateRejectedToastView,
   providerUpdateNotificationKey,
+  serverUpdatesProvidersAutomatically,
   shouldShowPrimaryProviderUpdateToast,
   type ProviderUpdateToastView,
 } from "./ProviderUpdateLaunchNotification.logic";
@@ -120,6 +125,9 @@ function addProviderUpdateToast(input: {
 export function ProviderUpdatePrimaryNotification() {
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const updatesAutomatically = serverUpdatesProvidersAutomatically(
+    useAtomValue(primaryServerConfigAtom),
+  );
   const primaryEnvironment = usePrimaryEnvironment();
   const canManageProviders = useEnvironmentScope(
     primaryEnvironment?.environmentId ?? null,
@@ -144,7 +152,10 @@ export function ProviderUpdatePrimaryNotification() {
     };
   }, []);
 
-  const updateProviders = useMemo(() => collectProviderUpdateCandidates(providers), [providers]);
+  const updateProviders = useMemo(
+    () => collectPromptedProviderUpdateCandidates(providers, updatesAutomatically),
+    [providers, updatesAutomatically],
+  );
   const notificationKey = useMemo(
     () => providerUpdateNotificationKey(updateProviders),
     [updateProviders],

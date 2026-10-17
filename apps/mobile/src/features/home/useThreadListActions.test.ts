@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
     input: { threadId: string; orderKey?: string };
   }[],
   dialogs: [] as { onConfirm: () => void }[],
+  renameDialogs: [] as { onConfirm: (title: string) => void }[],
   alerts: [] as {
     title: string;
     buttons?: { text: string; onPress?: () => void }[];
@@ -34,9 +35,16 @@ vi.mock("react", () => ({
   useRef: (current: unknown) => ({ current }),
 }));
 vi.mock("react-native", () => ({
+  Platform: {
+    get OS() {
+      return process.env.EXPO_OS ?? "ios";
+    },
+  },
   Alert: {
     alert: (title: string, _message: string, buttons?: { text: string; onPress?: () => void }[]) =>
       state.alerts.push({ title, buttons }),
+    prompt: (_title: string, _message: string, onConfirm: (title: string) => void) =>
+      state.renameDialogs.push({ onConfirm }),
   },
 }));
 vi.mock("expo-haptics", () => ({
@@ -45,6 +53,14 @@ vi.mock("expo-haptics", () => ({
 }));
 vi.mock("../../components/ConfirmDialogHost", () => ({
   showConfirmDialog: (dialog: { onConfirm: () => void }) => state.dialogs.push(dialog),
+  showTextInputDialog: (dialog: { onConfirm: (title: string) => void }) =>
+    state.renameDialogs.push(dialog),
+}));
+vi.mock("../../state/terminal", () => ({
+  terminalEnvironment: { close: async () => AsyncResult.success(undefined) },
+}));
+vi.mock("../../state/presentation", () => ({
+  environmentPresentations: { presentationsAtom: "environment-presentations" },
 }));
 vi.mock("../archive/useArchivedThreadSnapshots", () => ({
   refreshArchivedThreadsForEnvironment: () => {},
@@ -68,22 +84,24 @@ vi.mock("../../state/atom-registry", () => ({
           ? state.shells
           : atom === "queued-thread-keys"
             ? new Set<string>()
-            : new Map(
-                [...state.scopes.keys()].map((environmentId) => [
-                  environmentId,
-                  {
-                    environment: {
-                      capabilities: {
-                        threadSettlement: true,
-                        threadSnooze: true,
-                        threadPinning: true,
-                        threadPinReorder: true,
-                        threadTitleRegeneration: true,
+            : atom === "environment-presentations"
+              ? new Map()
+              : new Map(
+                  [...state.scopes.keys()].map((environmentId) => [
+                    environmentId,
+                    {
+                      environment: {
+                        capabilities: {
+                          threadSettlement: true,
+                          threadSnooze: true,
+                          threadPinning: true,
+                          threadPinReorder: true,
+                          threadTitleRegeneration: true,
+                        },
                       },
                     },
-                  },
-                ]),
-              ),
+                  ]),
+                ),
   },
 }));
 vi.mock("../../state/use-atom-command", () => ({
@@ -178,6 +196,7 @@ beforeEach(() => {
   state.requests = [];
   state.shells = [];
   state.dialogs = [];
+  state.renameDialogs = [];
   state.alerts = [];
   state.afterRequest = undefined;
 });
@@ -265,11 +284,52 @@ describe("thread list operation permissions", () => {
   });
 
   it("keeps delete independent of terminal and source-control permissions", async () => {
+    const deleted = Promise.withResolvers<void>();
+    state.afterRequest = () => deleted.resolve();
     vi.stubEnv("EXPO_OS", "android");
     useArchivedThreadListActions(() => {}).confirmDeleteThread(makeThread());
-    await state.dialogs[0]!.onConfirm();
+    state.dialogs[0]!.onConfirm();
+    await deleted.promise;
 
     expect(state.requests).toEqual([expect.objectContaining({ action: "delete" })]);
+  });
+});
+
+describe.each(["ios", "android"])("%s thread rename permissions", (os) => {
+  beforeEach(() => vi.stubEnv("EXPO_OS", os));
+
+  it("does not open a rename dialog without permission on the target environment", () => {
+    useThreadListActions().renameThread(makeThread({ environmentId: otherEnvironmentId }));
+    expect(state.renameDialogs).toEqual([]);
+    expect(state.requests).toEqual([]);
+  });
+
+  it("rechecks permission before opening a retained rename action", () => {
+    const actions = useThreadListActions();
+    state.scopes.get(primaryEnvironmentId)!.clear();
+    actions.renameThread(makeThread());
+    expect(state.renameDialogs).toEqual([]);
+  });
+
+  it("does not submit a retained rename dialog after permission is revoked", () => {
+    useThreadListActions().renameThread(makeThread());
+    expect(state.renameDialogs).toHaveLength(1);
+    state.scopes.get(primaryEnvironmentId)!.clear();
+    state.renameDialogs[0]!.onConfirm("New title");
+    expect(state.requests).toEqual([]);
+  });
+
+  it("renames the chosen environment's thread when permission is granted", () => {
+    state.scopes.get(otherEnvironmentId)!.add(AuthOrchestrationOperateScope);
+    useThreadListActions().renameThread(makeThread({ environmentId: otherEnvironmentId }));
+    state.renameDialogs[0]!.onConfirm("New title");
+    expect(state.requests).toEqual([
+      {
+        action: "updateMetadata",
+        environmentId: otherEnvironmentId,
+        input: { threadId: "thread", title: "New title" },
+      },
+    ]);
   });
 });
 

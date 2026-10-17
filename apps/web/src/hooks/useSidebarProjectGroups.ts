@@ -1,18 +1,23 @@
 import { useMemo } from "react";
 
 import { orderItemsByPreferredIds, sortSidebarV2ProjectGroups } from "../components/Sidebar.logic";
-import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  getProjectOrderKey,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useEnvironmentIdentities, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
-import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { legacyProjectCwdPreferenceKey } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
+import { useSidebarProjectLayout } from "./useSidebarProjectLayout";
 
 /** The sidebar's project groups, in the order the sidebar shows them. */
 export function useSidebarProjectGroups() {
   const projects = useProjects();
   const threads = useThreadShells();
-  const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const { projectOrder } = useSidebarProjectLayout();
   const sortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const environments = useEnvironmentIdentities();
@@ -24,11 +29,14 @@ export function useSidebarProjectGroups() {
         preferredIds: projectOrder,
         getId: getProjectOrderKey,
         getPreferenceIds: (project) => [
+          deriveLogicalProjectKeyFromSettings(project, groupingSettings, {
+            groupScratchProjects: true,
+          }),
           getProjectOrderKey(project),
           legacyProjectCwdPreferenceKey(project.workspaceRoot),
         ],
       }),
-    [projectOrder, projects],
+    [groupingSettings, projectOrder, projects],
   );
   const unsortedGroups = useMemo(() => {
     const labels = new Map(

@@ -1,14 +1,14 @@
 import { Spinner } from "~/components/ui/spinner";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
 import { CircleCheckIcon, DownloadIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 
-import { primaryServerProvidersAtom } from "../../state/server";
+import { useEnvironments } from "../../state/environments";
 import { compareIsoDateTimes } from "../../lib/threadSort";
 import {
   getProviderUpdateSidebarPillView,
+  type MachineServerProvider,
   type ProviderUpdateSidebarPillView,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -42,9 +42,29 @@ function latestProviderCheckedAt(
   );
 }
 
+/**
+ * Provider snapshots from every connected machine. Each server updates its
+ * providers on its own, so a failure on a remote machine must surface here
+ * too; with more than one machine, snapshots carry the machine's label.
+ */
+function useConnectedMachineProviders(): ReadonlyArray<MachineServerProvider> {
+  const { environments } = useEnvironments();
+  return useMemo(() => {
+    const connected = environments.flatMap((environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig
+        ? [{ label: environment.label, providers: environment.serverConfig.providers }]
+        : [],
+    );
+    if (connected.length <= 1) return connected[0]?.providers ?? [];
+    return connected.flatMap(({ label, providers }) =>
+      providers.map((provider) => ({ ...provider, machineLabel: label })),
+    );
+  }, [environments]);
+}
+
 export function SidebarProviderUpdatePill() {
   const navigate = useNavigate();
-  const providers = useAtomValue(primaryServerProvidersAtom);
+  const providers = useConnectedMachineProviders();
   const [dismissedKeys, setDismissedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [renderedView, setRenderedView] = useState<ProviderUpdateSidebarPillView | null>(null);
   const [pendingView, setPendingView] = useState<ProviderUpdateSidebarPillView | null>(null);

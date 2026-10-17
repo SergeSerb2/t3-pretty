@@ -63,6 +63,56 @@ describe("resource-based machine selection", () => {
     ).toBe("large");
   });
 
+  it("favors the machine that is faster at agent work", () => {
+    const measured = (agentMark: number): HostResourcesSnapshot => ({
+      ...resources,
+      agentPerf: { agentMark, measuredAt: now, running: false, error: null },
+    });
+    expect(
+      chooseLoadBalancedEnvironment(
+        [
+          { environmentId: "slow", resources: measured(400), weight: 50 },
+          { environmentId: "fast", resources: measured(1_200), weight: 50 },
+        ],
+        now,
+      ),
+    ).toBe("fast");
+    // Preference still counts: 4x preference outweighs a 3x faster machine.
+    expect(
+      chooseLoadBalancedEnvironment(
+        [
+          { environmentId: "slow", resources: measured(400), weight: 100 },
+          { environmentId: "fast", resources: measured(1_200), weight: 25 },
+        ],
+        now,
+      ),
+    ).toBe("slow");
+  });
+
+  it("counts an unmeasured machine at the median score", () => {
+    const measured = (agentMark: number): HostResourcesSnapshot => ({
+      ...resources,
+      agentPerf: { agentMark, measuredAt: null, running: false, error: null },
+    });
+    const candidates = [
+      { environmentId: "slow", resources: measured(300), weight: 50 },
+      { environmentId: "fast", resources: measured(900), weight: 50 },
+      { environmentId: "unmeasured", resources: { ...resources, cpuCount: 16 }, weight: 50 },
+    ];
+    // Median 600 x 16 cores beats 900 x 8 cores.
+    expect(chooseLoadBalancedEnvironment(candidates, now)).toBe("unmeasured");
+    expect(
+      chooseLoadBalancedEnvironment(
+        candidates.map((candidate) =>
+          candidate.environmentId === "unmeasured"
+            ? { ...candidate, resources: { ...resources, cpuCount: 8 } }
+            : candidate,
+        ),
+        now,
+      ),
+    ).toBe("fast"); // Median 600 x 8 cores, not the reference 1000, loses to 900 x 8.
+  });
+
   it("requires recent usable measurements and avoids saturated hosts", () => {
     expect(
       chooseLoadBalancedEnvironment(

@@ -7,9 +7,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import {
-  type EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+import { type EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import * as Option from "effect/Option";
 
 import { threadDetailToShell } from "./use-thread-selection.logic";
@@ -79,7 +77,8 @@ function useResolvedThreadSelection(params: ThreadSelectionRouteParams | undefin
     return message === null ? null : { message, outcome };
   }, [creationOutcome, queuedMessagesByThreadKey, selectedThreadKey]);
   // Until the creation is delivered the server has no thread to subscribe
-  // to; subscribing anyway would retry "not found" for the whole setup.
+  // to. Every detail reader must use this ref, not the route id: an earlier
+  // read gets a definitive not-found, which the thread state keeps as deleted.
   const selectedThreadDetailRef =
     selectedThreadShell !== null ||
     pendingCreation === null ||

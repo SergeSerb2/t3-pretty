@@ -1,7 +1,13 @@
 import type { EnvironmentThreadShell as OrchestrationThreadShell } from "./models.ts";
 import { presentThreadShell } from "./models.ts";
 import { v2ThreadShell } from "./orchestrationV2TestFixtures.ts";
-type OrchestrationShellSnapshot = { readonly snapshotSequence: number; readonly projects: readonly []; readonly threads: ReadonlyArray<OrchestrationThreadShell>; readonly automations?: readonly []; readonly updatedAt: string };
+type OrchestrationShellSnapshot = {
+  readonly snapshotSequence: number;
+  readonly projects: readonly [];
+  readonly threads: ReadonlyArray<OrchestrationThreadShell>;
+  readonly automations?: readonly [];
+  readonly updatedAt: string;
+};
 import {
   CommandId,
   EnvironmentId,
@@ -17,6 +23,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -34,11 +41,16 @@ import {
   asQueuedThreadLifecycleCommand,
   coalescePendingThreadLifecycleEntryBatch,
   coalescePendingThreadLifecycleEntries,
+  encodePendingEntries,
   makeThreadLifecycleOutbox,
   ThreadLifecycleOutboxPersistenceError,
   ThreadLifecycleOutboxStore,
   type PendingThreadLifecycleEntry,
 } from "./threadLifecycleOutbox.ts";
+import {
+  THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES,
+  THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH,
+} from "./threadLifecycleOutboxModel.ts";
 
 function isolatedOutboxStore() {
   const memory = new Map<string, ReadonlyArray<PendingThreadLifecycleEntry>>();
@@ -178,137 +190,63 @@ describe("queued thread lifecycle commands", () => {
     });
   });
 
-  it("replaces the same-domain command and lets settle drop a parked snooze", () => {
-    const snooze = entry({
-      command: {
-        type: "thread.snooze",
-        commandId: CommandId.make("snooze-1"),
+  it("preserves the effects of queued lifecycle transitions before their reverse", () => {
+    const lifecycleEntry = (
+      type:
+        | "thread.settle"
+        | "thread.unsettle"
+        | "thread.pin"
+        | "thread.unpin"
+        | "thread.store"
+        | "thread.unstore",
+      index: number,
+    ) => {
+      const common = {
+        commandId: CommandId.make(`transition-${index}`),
         threadId: THREAD_ID,
-        snoozedUntil: "2026-08-16T12:00:00.000Z",
-      },
-    });
-    const laterSnooze = entry({
-      queuedAt: "2026-08-15T13:00:00.000Z",
-      command: {
-        type: "thread.snooze",
-        commandId: CommandId.make("snooze-2"),
-        threadId: THREAD_ID,
-        snoozedUntil: "2026-08-17T12:00:00.000Z",
-      },
-    });
-    const settle = entry({
-      queuedAt: "2026-08-15T14:00:00.000Z",
-      command: {
-        type: "thread.settle",
-        commandId: CommandId.make("settle-1"),
-        threadId: THREAD_ID,
-      },
-    });
-    const otherThread = entry({
-      command: {
-        type: "thread.settle",
-        commandId: CommandId.make("settle-other"),
-        threadId: OTHER_THREAD_ID,
-      },
-    });
-
-    expect(coalescePendingThreadLifecycleEntries([snooze, otherThread], laterSnooze)).toEqual([
-      otherThread,
-      laterSnooze,
-    ]);
-    expect(coalescePendingThreadLifecycleEntries([laterSnooze, otherThread], settle)).toEqual([
-      otherThread,
-      settle,
-    ]);
-
-    const pinReorder = entry({
-      command: {
-        type: "thread.pin.reorder",
-        commandId: CommandId.make("pin-reorder-1"),
-        threadId: THREAD_ID,
-        orderKey: "a0",
-      },
-    });
-    const pin = entry({
-      queuedAt: "2026-08-15T13:00:00.000Z",
-      command: {
-        type: "thread.pin",
-        commandId: CommandId.make("pin-1"),
-        threadId: THREAD_ID,
-        orderKey: "a1",
-      },
-    });
-    expect(coalescePendingThreadLifecycleEntries([pinReorder, otherThread], pin)).toEqual([
-      otherThread,
-      pin,
-    ]);
-    expect(coalescePendingThreadLifecycleEntries([pin, otherThread], settle)).toEqual([
-      otherThread,
-      settle,
-    ]);
-    expect(coalescePendingThreadLifecycleEntries([laterSnooze, otherThread], pin)).toEqual([
-      otherThread,
-      pin,
-    ]);
-  });
-
-  it("coalesces a persisted batch in one pass without reviving a removed snooze", () => {
-    const snooze = entry({
-      command: {
-        type: "thread.snooze",
-        commandId: CommandId.make("snooze-before-settle"),
-        threadId: THREAD_ID,
-        snoozedUntil: "2026-08-16T12:00:00.000Z",
-      },
-    });
-    const settle = entry({
-      command: {
-        type: "thread.settle",
-        commandId: CommandId.make("settle-before-unsettle"),
-        threadId: THREAD_ID,
-      },
-    });
-    const unsettle = entry({
-      command: {
-        type: "thread.unsettle",
-        commandId: CommandId.make("latest-unsettle"),
-        threadId: THREAD_ID,
-        reason: "user",
-      },
-    });
-
-    expect(coalescePendingThreadLifecycleEntryBatch([snooze, settle, unsettle])).toEqual([
-      unsettle,
-    ]);
-    const parkedPin = entry({
-      command: {
-        type: "thread.pin",
-        commandId: CommandId.make("pin-after-snooze"),
-        threadId: THREAD_ID,
-        orderKey: "a0",
-      },
-    });
-    expect(coalescePendingThreadLifecycleEntryBatch([snooze, parkedPin])).toEqual([parkedPin]);
-
-    let threadIdReads = 0;
-    const manyThreads = Array.from({ length: 2_000 }, (_, index) => {
-      const threadId = ThreadId.make(`thread-${index}`);
-      const command = {
-        type: "thread.settle" as const,
-        commandId: CommandId.make(`settle-${index}`),
-        threadId,
       };
-      Object.defineProperty(command, "threadId", {
-        get: () => {
-          threadIdReads += 1;
-          return threadId;
-        },
+      return entry({
+        command:
+          type === "thread.unsettle"
+            ? { ...common, type, reason: "user" }
+            : type === "thread.pin"
+              ? { ...common, type, orderKey: `slot-${index}` }
+              : { ...common, type },
       });
-      return entry({ command });
+    };
+    const sequences = [
+      ["thread.settle", "thread.pin", "thread.unpin"],
+      ["thread.settle", "thread.store", "thread.unstore"],
+      ["thread.store", "thread.pin", "thread.unpin"],
+      ["thread.settle", "thread.unsettle"],
+      ["thread.unpin", "thread.pin"],
+      ["thread.pin", "thread.pin"],
+    ] as const;
+    const initial = makeShell({
+      snoozedUntil: "2026-08-16T12:00:00.000Z",
+      snoozedAt: "2026-08-14T12:00:00.000Z",
+      pinnedAt: "2026-08-14T12:00:00.000Z",
+      pinOrderKey: "original-slot",
     });
-
-    expect(coalescePendingThreadLifecycleEntryBatch(manyThreads)).toHaveLength(manyThreads.length);
-    expect(threadIdReads).toBe(manyThreads.length);
+    for (const sequence of sequences) {
+      const entries = sequence.map(lifecycleEntry);
+      const expected = applyPendingThreadLifecycleToThread(initial, entries);
+      const incremental = entries.reduce<ReadonlyArray<PendingThreadLifecycleEntry>>(
+        (pending, next) => coalescePendingThreadLifecycleEntries(pending, next),
+        [],
+      );
+      expect(
+        applyPendingThreadLifecycleToThread(initial, incremental),
+        sequence.join(" → "),
+      ).toEqual(expected);
+      expect(
+        applyPendingThreadLifecycleToThread(
+          initial,
+          coalescePendingThreadLifecycleEntryBatch(entries),
+        ),
+        sequence.join(" → "),
+      ).toEqual(expected);
+    }
   });
 });
 
@@ -318,6 +256,7 @@ describe("pending thread lifecycle overlay", () => {
       makeShell({
         pinnedAt: "2026-08-14T00:00:00.000Z",
         pinOrderKey: "a0",
+        activeOrderKey: "previous-active-slot",
         snoozedUntil: "2026-08-16T12:00:00.000Z",
         snoozedAt: "2026-08-15T00:00:00.000Z",
       }),
@@ -336,6 +275,7 @@ describe("pending thread lifecycle overlay", () => {
     expect(overlayed.settledAt).toBe("2026-08-15T12:00:00.000Z");
     expect(overlayed.pinnedAt).toBeNull();
     expect(overlayed.pinOrderKey).toBeNull();
+    expect(overlayed.activeOrderKey).toBeNull();
     expect(overlayed.snoozedUntil).toBeNull();
     expect(overlayed.snoozedAt).toBeNull();
   });
@@ -591,6 +531,124 @@ describe("pending thread lifecycle overlay", () => {
 });
 
 describe("ThreadLifecycleOutbox", () => {
+  it.effect.each(["entries", "encoded size"] as const)(
+    "rejects an offline action at the %s limit without changing the saved queue",
+    (limit) =>
+      Effect.gen(function* () {
+        let saved: ReadonlyArray<PendingThreadLifecycleEntry>;
+        if (limit === "entries") {
+          saved = Array.from({ length: THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES }, (_, index) =>
+            entry({
+              command: {
+                type: "thread.settle",
+                commandId: CommandId.make(`queued-${index}`),
+                threadId: THREAD_ID,
+              },
+            }),
+          );
+        } else {
+          const base = entry({
+            command: {
+              type: "thread.active.reorder",
+              commandId: CommandId.make("large-order"),
+              threadId: THREAD_ID,
+              orderKey: "",
+            },
+          });
+          saved = [
+            {
+              ...base,
+              command: {
+                ...base.command,
+                type: "thread.active.reorder",
+                orderKey: "x".repeat(
+                  THREAD_LIFECYCLE_OUTBOX_MAX_JSON_LENGTH - JSON.stringify([base]).length,
+                ),
+              },
+            },
+          ];
+        }
+        yield* encodePendingEntries(saved);
+        const original = saved;
+        const store = ThreadLifecycleOutboxStore.of({
+          load: () => Effect.succeed(saved),
+          save: (_environmentId, entries) =>
+            encodePendingEntries(entries).pipe(
+              Effect.mapError(
+                () =>
+                  new ThreadLifecycleOutboxPersistenceError({
+                    operation: "save",
+                    message: "queue exceeds storage limits",
+                  }),
+              ),
+              Effect.andThen(
+                Effect.sync(() => {
+                  saved = entries;
+                }),
+              ),
+            ),
+        });
+        const outbox = yield* makeThreadLifecycleOutbox().pipe(
+          Effect.provideService(ThreadLifecycleOutboxStore, store),
+        );
+        const result = yield* outbox
+          .enqueue(ENVIRONMENT_ID, {
+            type: "thread.unsettle",
+            commandId: CommandId.make("overflow"),
+            threadId: THREAD_ID,
+            reason: "user",
+          })
+          .pipe(Effect.result);
+
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure).toMatchObject({
+            _tag: "ThreadLifecycleOutboxPersistenceError",
+            operation: "save",
+          });
+        }
+        expect(saved).toBe(original);
+        expect((yield* SubscriptionRef.get(outbox.pending)).get(ENVIRONMENT_ID)?.length).toBe(
+          original.length,
+        );
+      }),
+  );
+
+  it.effect("rejects a failed save before publishing the new offline action", () =>
+    Effect.gen(function* () {
+      const saveStarted = yield* Deferred.make<void>();
+      const releaseSave = yield* Deferred.make<void>();
+      const failure = new ThreadLifecycleOutboxPersistenceError({
+        operation: "save",
+        message: "storage is full",
+      });
+      const outbox = yield* makeThreadLifecycleOutbox().pipe(
+        Effect.provideService(ThreadLifecycleOutboxStore, {
+          load: () => Effect.succeed([]),
+          save: () =>
+            Deferred.succeed(saveStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseSave)),
+              Effect.andThen(Effect.fail(failure)),
+            ),
+        }),
+      );
+      const enqueuing = yield* outbox
+        .enqueue(ENVIRONMENT_ID, {
+          type: "thread.settle",
+          commandId: CommandId.make("unpersisted"),
+          threadId: THREAD_ID,
+        })
+        .pipe(Effect.result, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(saveStarted);
+      expect((yield* SubscriptionRef.get(outbox.pending)).has(ENVIRONMENT_ID)).toBe(false);
+      yield* Deferred.succeed(releaseSave, undefined);
+      const result = yield* Fiber.join(enqueuing);
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) expect(result.failure).toBe(failure);
+      expect((yield* SubscriptionRef.get(outbox.pending)).has(ENVIRONMENT_ID)).toBe(false);
+    }),
+  );
+
   it.effect("does not lose stored commands when the first enqueue races initial loading", () =>
     Effect.gen(function* () {
       const loadStarted = yield* Deferred.make<void>();
@@ -694,7 +752,7 @@ describe("ThreadLifecycleOutbox", () => {
     }),
   );
 
-  it.effect("merges in-memory commands after a transient initial load failure", () =>
+  it.effect("rejects an initial load failure and preserves saved commands when retried", () =>
     Effect.gen(function* () {
       let loadCount = 0;
       let saveCount = 0;
@@ -724,31 +782,28 @@ describe("ThreadLifecycleOutbox", () => {
             saveCount += 1;
           }).pipe(Effect.andThen(Deferred.succeed(persisted, entries)), Effect.asVoid),
       });
-      const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
-        target: TARGET,
-        state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
-        session: yield* SubscriptionRef.make(Option.none<RpcSession>()),
-        prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
-        connect: Effect.void,
-        disconnect: Effect.void,
-        retryNow: Effect.void,
-      } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const outbox = yield* makeThreadLifecycleOutbox().pipe(
         Effect.provideService(ThreadLifecycleOutboxStore, store),
       );
 
-      yield* outbox.enqueue(ENVIRONMENT_ID, {
+      const command = {
         type: "thread.settle",
         commandId: CommandId.make("queued-during-failure"),
         threadId: OTHER_THREAD_ID,
-      });
+      } as const;
+      const failed = yield* outbox.enqueue(ENVIRONMENT_ID, command).pipe(Effect.result);
+      expect(Result.isFailure(failed)).toBe(true);
+      if (Result.isFailure(failed)) {
+        expect(failed.failure).toMatchObject({
+          _tag: "ThreadLifecycleOutboxPersistenceError",
+          operation: "load",
+        });
+      }
       expect(saveCount).toBe(0);
+      expect((yield* SubscriptionRef.get(outbox.pending)).has(ENVIRONMENT_ID)).toBe(false);
 
-      const watcher = yield* outbox
-        .watchAndDrain(supervisor)
-        .pipe(Effect.forkChild({ startImmediately: true }));
+      expect(yield* outbox.enqueue(ENVIRONMENT_ID, command)).toBe(true);
       const merged = yield* Deferred.await(persisted);
-      yield* Fiber.interrupt(watcher);
 
       expect(loadCount).toBe(2);
       expect(saveCount).toBe(1);
@@ -837,15 +892,41 @@ describe("ThreadLifecycleOutbox", () => {
     }).pipe(Effect.provideService(ThreadLifecycleOutboxStore, isolatedOutboxStore())),
   );
 
-  it.effect("dispatches parked commands once the environment session is back", () =>
+  it.effect("replays parked transitions in order after reload and reconnect", () =>
     Effect.gen(function* () {
       const dispatched: OrchestrationV2Command[] = [];
       const delivered = yield* Deferred.make<void>();
+      const commands: ReadonlyArray<OrchestrationV2Command> = [
+        {
+          type: "thread.settle",
+          commandId: CommandId.make("settle-offline"),
+          threadId: THREAD_ID,
+        },
+        {
+          type: "thread.pin",
+          commandId: CommandId.make("pin-offline"),
+          threadId: THREAD_ID,
+        },
+        {
+          type: "thread.unpin",
+          commandId: CommandId.make("unpin-offline"),
+          threadId: THREAD_ID,
+        },
+      ];
+      let replayed = makeShell();
       const client = {
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
           Effect.gen(function* () {
             dispatched.push(command);
-            yield* Deferred.succeed(delivered, undefined);
+            const queued = asQueuedThreadLifecycleCommand(command);
+            if (queued !== null) {
+              replayed = applyPendingThreadLifecycleToThread(replayed, [
+                entry({ command: queued }),
+              ]);
+            }
+            if (dispatched.length === commands.length) {
+              yield* Deferred.succeed(delivered, undefined);
+            }
             return { sequence: dispatched.length };
           }),
       } as unknown as WsRpcProtocolClient;
@@ -866,28 +947,21 @@ describe("ThreadLifecycleOutbox", () => {
         disconnect: Effect.void,
         retryNow: Effect.void,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
-      const outbox = yield* makeThreadLifecycleOutbox();
-
-      const queued = yield* outbox.enqueue(ENVIRONMENT_ID, {
-        type: "thread.settle",
-        commandId: CommandId.make("settle-offline"),
-        threadId: THREAD_ID,
-      });
-      expect(queued).toBe(true);
+      const offlineOutbox = yield* makeThreadLifecycleOutbox();
+      for (const command of commands) {
+        expect(yield* offlineOutbox.enqueue(ENVIRONMENT_ID, command)).toBe(true);
+      }
       expect(dispatched).toEqual([]);
 
+      const outbox = yield* makeThreadLifecycleOutbox();
       const drain = yield* outbox.watchAndDrain(supervisor).pipe(Effect.forkChild);
       yield* SubscriptionRef.set(supervisor.session, Option.some(session));
       yield* Deferred.await(delivered);
       yield* Fiber.interrupt(drain);
 
-      expect(dispatched).toEqual([
-        {
-          type: "thread.settle",
-          commandId: "settle-offline",
-          threadId: THREAD_ID,
-        },
-      ]);
+      expect(dispatched).toEqual(commands);
+      expect(replayed.settledOverride).toBe("active");
+      expect(replayed.pinnedAt).toBeNull();
     }).pipe(Effect.provideService(ThreadLifecycleOutboxStore, isolatedOutboxStore())),
   );
 

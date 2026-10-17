@@ -200,15 +200,16 @@ function CloudAuthBridge(props: { readonly children: ReactNode }) {
 export function CloudAuthProvider(props: { readonly children: ReactNode }) {
   const config = resolveCloudPublicConfig();
   const publishableKey = config.clerk.publishableKey;
+  const jwtTemplate = config.clerk.jwtTemplate;
   const relayUrl = config.relay.url;
 
   useEffect(() => {
-    if (!publishableKey || !relayUrl) {
+    if (!publishableKey || !jwtTemplate || !relayUrl) {
       deactivateCloudRelayAccount();
     }
-  }, [publishableKey, relayUrl]);
+  }, [publishableKey, jwtTemplate, relayUrl]);
 
-  if (!publishableKey || !relayUrl) {
+  if (!publishableKey || !jwtTemplate || !relayUrl) {
     return props.children;
   }
 

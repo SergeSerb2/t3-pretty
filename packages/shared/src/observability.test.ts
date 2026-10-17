@@ -2,6 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -11,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Order from "effect/Order";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
@@ -387,6 +389,121 @@ describe("observability", () => {
   });
 
   nodeServicesIt("node services", (it) => {
+    it.effect("starts each sparse batch window on its first record and uses no idle timers", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-trace-sink-" });
+        const tracePath = path.join(tempDir, "shared.trace.ndjson");
+        const flushed = yield* Queue.unbounded<void>();
+        const clock = yield* Clock.Clock;
+        let timers = 0;
+        const sink = yield* makeTraceSink({
+          filePath: tracePath,
+          maxBytes: 1024 * 1024,
+          maxFiles: 2,
+          batchWindowMs: 1_000,
+          onFlush: () => Queue.offer(flushed, undefined).pipe(Effect.asVoid),
+        }).pipe(
+          Effect.provideService(Clock.Clock, {
+            ...clock,
+            sleep: (duration) =>
+              Effect.sync(() => timers++).pipe(Effect.andThen(clock.sleep(duration))),
+          }),
+        );
+
+        yield* TestClock.adjust("10 minutes");
+        assert.equal(timers, 0);
+        yield* TestClock.adjust("500 millis");
+        sink.push(makeRecord("first"));
+        yield* TestClock.adjust("500 millis");
+        assert.equal(timers, 1);
+        assert.isFalse(yield* fileSystem.exists(tracePath));
+        sink.push(makeRecord("second"));
+        yield* TestClock.adjust("499 millis");
+        assert.isFalse(yield* fileSystem.exists(tracePath));
+        yield* TestClock.adjust(1);
+        yield* Queue.take(flushed);
+        assert.deepEqual(
+          (yield* readTraceRecords(tracePath)).map((record) => record.name),
+          ["first", "second"],
+        );
+
+        yield* TestClock.adjust("10 minutes");
+        assert.equal(timers, 1);
+        sink.push(makeRecord("next-batch"));
+        yield* TestClock.adjust("999 millis");
+        assert.equal((yield* readTraceRecords(tracePath)).length, 2);
+        yield* TestClock.adjust(1);
+        yield* Queue.take(flushed);
+        assert.equal((yield* readTraceRecords(tracePath)).length, 3);
+        yield* TestClock.adjust("10 minutes");
+        assert.equal(timers, 2);
+      }),
+    );
+
+    it.effect.each([
+      { startWindow: false, phase: "before" },
+      { startWindow: true, phase: "during" },
+    ])("flushes a full batch $phase its batch window", ({ startWindow }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-trace-sink-" });
+        const tracePath = path.join(tempDir, "shared.trace.ndjson");
+        const flushed = yield* Queue.unbounded<void>();
+        const sink = yield* makeTraceSink({
+          filePath: tracePath,
+          maxBytes: 1024 * 1024,
+          maxFiles: 2,
+          batchWindowMs: 1_000,
+          onFlush: () => Queue.offer(flushed, undefined).pipe(Effect.asVoid),
+        });
+
+        sink.push(makeRecord("threshold", "0"));
+        if (startWindow) yield* TestClock.adjust(0);
+        for (let index = 1; index < 256; index++) {
+          sink.push(makeRecord("threshold", String(index)));
+        }
+        yield* Queue.take(flushed);
+        assert.equal((yield* readTraceRecords(tracePath)).length, 256);
+
+        sink.push(makeRecord("next-batch"));
+        yield* TestClock.adjust("999 millis");
+        assert.equal((yield* readTraceRecords(tracePath)).length, 256);
+        yield* TestClock.adjust(1);
+        yield* Queue.take(flushed);
+        assert.equal((yield* readTraceRecords(tracePath)).length, 257);
+      }),
+    );
+
+    it.effect("flushes a pending batch when its scope closes", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-trace-sink-" });
+        const tracePath = path.join(tempDir, "shared.trace.ndjson");
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const sink = yield* makeTraceSink({
+              filePath: tracePath,
+              maxBytes: 1024,
+              maxFiles: 2,
+              batchWindowMs: 1_000,
+            });
+            sink.push(makeRecord("pending"));
+            yield* TestClock.adjust("500 millis");
+            assert.isFalse(yield* fileSystem.exists(tracePath));
+          }),
+        );
+        assert.deepEqual(
+          (yield* readTraceRecords(tracePath)).map((record) => record.name),
+          ["pending"],
+        );
+      }),
+    );
+
     it.effect(
       "keeps trace producers responsive during a slow write, bounds the backlog, and drains on close",
       () =>

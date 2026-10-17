@@ -20,6 +20,22 @@ Follow the sign-in instructions. Setup offers a
 server with `t3 serve`. Saving your sign-in alone does not make the machine
 reachable.
 
+## Send context between environments
+
+Ask a thread to send selected files or code context to a thread on another
+Connect environment. For example: “Send `src/parser.ts` and these findings to
+the parser thread on M1 Dev.” Both environments must use the same Connect
+account and be online. Agents can also send relevant context when another
+thread needs it for the current task.
+
+Each transfer accepts up to eight files, 2 MiB per file, and 8 MiB in total.
+You can request a smaller total limit. Files must belong to the sending thread's
+workspace. Known credential files, repository metadata, and dependency caches are excluded.
+Files with multiple hard links are also excluded.
+Received files appear as thread attachments and do not replace workspace files.
+The receiving provider must support the file type. The destination thread cannot
+have broader permission modes than the sender.
+
 ## T3 Connect troubleshooting
 
 Run `t3 connect` on the server machine to authorize it and optionally install the background service.
@@ -266,6 +282,17 @@ Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU
 memory available, **Less often** to reduce its share, or **Manual only** to exclude
 it from automatic selection. These are preferences, not fixed traffic percentages.
 Preferences are saved separately in each client.
+
+Turn on **Benchmark machines weekly** in the same section to also favor machines
+that are faster at agent work. About once a week, each machine runs a quick
+[Agent Perf](https://github.com/SergeSerb2/agentperf) benchmark, which loads every
+core for a few minutes. It starts only when no agent is working and the CPU is
+quiet. With the desktop app on that machine, it also waits until nobody is using
+the machine and it is on mains power. It stops when that changes and tries again
+later. Each machine row shows its score (AgentMark, where 1000 is the benchmark's
+reference machine). New threads are weighted by that score as well as by your
+preference. A machine without a score yet counts as average. The setting applies to
+every connected machine. Each machine needs Python 3.8 or newer.
 
 The composer checks eligible machines when choosing a draft's environment, then keeps
 that choice stable. Choose **Auto balance** again to check current resources, or choose

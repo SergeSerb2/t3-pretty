@@ -17,11 +17,6 @@ on:
         required: true
         default: false
         type: boolean
-      queue_mobile_builds:
-        description: Queue public iOS and Android builds on EAS
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -32,6 +27,7 @@ concurrency:
 
 env:
   T3CODE_BUILD_FLAVOR: public
+  T3CODE_PUBLIC_RELEASE: "1"
   # Only a manual stable cut can reach this workflow. This workflow alone marks a release latest.
   # Exact-version CLI commands use the immutable public-v tag instead.
   T3CODE_DESKTOP_UPDATE_FEED_URL: https://github.com/SergeSerb2/t3-pretty/releases/latest/download/
@@ -99,13 +95,15 @@ jobs:
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
   wsl_node_pty:
-    name: Build WSL node-pty
+    name: Build Linux CLI runtime for WSL
     needs: preflight
     if: >-
       github.repository == 'SergeSerb2/t3-pretty' &&
       needs.preflight.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    env:
+      PUBLIC_RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -120,24 +118,61 @@ jobs:
           run-install: |
             args:
               - --filter=t3...
-      - name: Compile Linux node-pty for WSL
+              - --filter=@t3tools/web...
+              - --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Build public server and web client
         run: |
           set -euo pipefail
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          (cd "$pty_dir" && npx --yes node-gyp rebuild)
-          mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-          file wsl-prebuild/pty.node
+          node scripts/update-release-package-versions.ts "$PUBLIC_RELEASE_VERSION"
+          vp run --filter t3 build
+      # Vite+ requires a Node 25.7+ host for --build-sea, independently of
+      # the repository's Node 24 install/build toolchain.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26.8.2
+      - name: Package and verify WSL runtime
+        env:
+          VP_NODE_VERSION: 26.8.2
+        run: |
+          set -euo pipefail
+          node apps/server/scripts/cli.ts build-exe --target linux-x64 --verbose
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml \
+            --target x86_64-unknown-linux-gnu
+          mkdir -p wsl-resource-monitor/linux-x64
+          cp native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor \
+            wsl-resource-monitor/linux-x64/
+          node scripts/build-cli-archive.ts --platform linux --arch x64 \
+            --version "$PUBLIC_RELEASE_VERSION" \
+            --resource-monitor-dir "$GITHUB_WORKSPACE/wsl-resource-monitor" \
+            --output-dir "$GITHUB_WORKSPACE/wsl-runtime"
+          archive="t3-$PUBLIC_RELEASE_VERSION-linux-x64.tar.gz"
+          mkdir -p wsl-runtime-check
+          tar -xzf "wsl-runtime/$archive" -C wsl-runtime-check
+          runtime="wsl-runtime-check/${archive%.tar.gz}"
+          test -s "$runtime/client/index.html"
+          pty="$runtime/node_modules/node-pty/build/Release/pty.node"
+          if [[ ! -f "$pty" ]]; then
+            pty="$runtime/node_modules/node-pty/prebuilds/linux-x64/pty.node"
+          fi
+          file "$pty" | grep -Eq 'ELF 64-bit.*x86-64'
+          test -x "$runtime/resource-monitor/linux-x64/t3-resource-monitor"
+          file "$runtime/t3" | grep -Eq 'ELF 64-bit.*x86-64'
+          "$runtime/t3" --version
+          (cd wsl-runtime && sha256sum "$archive" > "$archive.sha256")
       - uses: actions/upload-artifact@v7
         with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild/pty.node
+          name: wsl-runtime-linux-x64
+          path: |
+            wsl-runtime/*.tar.gz
+            wsl-runtime/*.tar.gz.sha256
           if-no-files-found: error
 
   desktop:
     name: Desktop (${{ matrix.label }})
-    # Keep the release atomic: Windows requires this prebuild, so no partial desktop set ships.
+    # Keep the release atomic: Windows requires this runtime, so no partial desktop set ships.
     needs: [preflight, wsl_node_pty]
     if: >-
       github.repository == 'SergeSerb2/t3-pretty' &&
@@ -195,16 +230,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-      - name: Download WSL prebuild
+      - name: Download verified WSL runtime
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v8
         with:
-          name: wsl-node-pty-x64
-          path: wsl-prebuild
+          name: wsl-runtime-linux-x64
+          path: wsl-runtime
       - name: Align package versions
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
       - name: Build unsigned public artifact
         shell: bash
+        env:
+          PUBLIC_RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           set -euo pipefail
           args=(
@@ -215,7 +252,9 @@ jobs:
             --verbose
           )
           if [[ "${{ matrix.platform }}" == "win" ]]; then
-            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+            archive="t3-$PUBLIC_RELEASE_VERSION-linux-x64.tar.gz"
+            (cd "$GITHUB_WORKSPACE/wsl-runtime" && sha256sum -c "$archive.sha256")
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE/wsl-runtime/$archive")
           fi
           vp run dist:desktop:artifact "${args[@]}"
       - name: Collect desktop files
@@ -224,7 +263,7 @@ jobs:
           set -euo pipefail
           mkdir -p public-desktop
           find release -maxdepth 1 -type f \
-            \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o \
+            \( -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o \
                -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \) \
             -exec cp {} public-desktop/ \;
           test -n "$(find public-desktop -type f -print -quit)"
@@ -258,9 +297,10 @@ jobs:
           run-install: |
             args:
               - --filter=t3...
+              - --filter=@t3tools/web...
               - --filter=@t3tools/scripts...
       - run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
-      - run: vp run --filter t3 build:bundle
+      - run: vp run --filter t3 build
       - name: Pack public CLI and installer
         run: |
           set -euo pipefail
@@ -290,9 +330,9 @@ jobs:
       APP_VARIANT: production
       T3CODE_MOBILE_APP_VERSION: ${{ needs.preflight.outputs.version }}
       T3CODE_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID }}
+      T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID: ${{ vars.T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID }}
       T3CODE_MOBILE_EXPO_OWNER: ${{ vars.T3CODE_PUBLIC_MOBILE_EXPO_OWNER }}
       T3CODE_MOBILE_EXPO_SLUG: ${{ vars.T3CODE_PUBLIC_MOBILE_EXPO_SLUG }}
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -317,16 +357,6 @@ jobs:
           name: public-mobile
           path: public-mobile-${{ needs.preflight.outputs.version }}.tar.gz
           if-no-files-found: error
-      - name: Queue public EAS builds
-        if: ${{ inputs.queue_mobile_builds }}
-        working-directory: apps/mobile
-        run: |
-          set -euo pipefail
-          test -n "$EXPO_TOKEN" || { echo "EXPO_TOKEN is required" >&2; exit 1; }
-          test -n "$T3CODE_MOBILE_EAS_PROJECT_ID" || { echo "T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID is required" >&2; exit 1; }
-          test -n "$T3CODE_MOBILE_EXPO_OWNER" || { echo "T3CODE_PUBLIC_MOBILE_EXPO_OWNER is required" >&2; exit 1; }
-          test -n "$T3CODE_MOBILE_EXPO_SLUG" || { echo "T3CODE_PUBLIC_MOBILE_EXPO_SLUG is required" >&2; exit 1; }
-          npx --yes eas-cli build --platform all --profile production --non-interactive --no-wait
 
   web:
     name: Public hosted web
@@ -434,7 +464,7 @@ jobs:
               exit 1
             }
           done
-          for pattern in '*.dmg' '*.zip' '*.AppImage' '*.exe'; do
+          for pattern in '*.dmg' '*.zip' '*.AppImage' '*.deb' '*.exe'; do
             compgen -G "public-release-assets/${pattern}" >/dev/null || {
               echo "missing required public release asset matching ${pattern}" >&2
               exit 1

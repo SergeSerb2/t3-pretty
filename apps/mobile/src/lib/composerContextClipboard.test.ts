@@ -123,6 +123,55 @@ describe("mobile context clipboard imports", () => {
     expect(mocks.dispose).toHaveBeenCalledOnce();
   });
 
+  it("removes earlier owned files when a later download rejects after cancellation", async () => {
+    const secondImage = {
+      ...image,
+      contextId: ComposerContextId.make("second-image-source"),
+      name: "second.png",
+      attachmentId: "second-source-file",
+    };
+    const input = {
+      ...clipboard,
+      text: `${clipboard.text} ![Second](t3-context://v1/image/second-image-source)`,
+      fragment: encodeComposerContextFragment({
+        version: 1,
+        source: { environmentId: EnvironmentId.make("source") },
+        records: [image, terminal, secondImage],
+      })!,
+    };
+    let rejectDownload!: (error: unknown) => void;
+    const secondDownload = new Promise<never>((_, reject) => {
+      rejectDownload = reject;
+    });
+    let markDownloadStarted!: () => void;
+    const downloadStarted = new Promise<void>((resolve) => {
+      markDownloadStarted = resolve;
+    });
+    mocks.download
+      .mockResolvedValueOnce({ uri: "file:///download.png", dispose: mocks.dispose })
+      .mockImplementationOnce(() => {
+        markDownloadStarted();
+        return secondDownload;
+      });
+    const controller = new AbortController();
+    const aborted = new DOMException("Download aborted", "AbortError");
+    const imported = importComposerContextClipboard(input, 0, controller.signal);
+    const rejection = expect(imported).rejects.toBe(aborted);
+
+    await downloadStarted;
+    expect(mocks.persist).toHaveBeenCalledExactlyOnceWith(
+      "file:///download.png",
+      "checkout.png",
+      expect.any(Number),
+    );
+    expect(mocks.dispose).toHaveBeenCalledOnce();
+    controller.abort();
+    rejectDownload(aborted);
+    await rejection;
+
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith("file:///owned.png");
+  });
+
   it("can copy an image before its source upload completes", async () => {
     mocks.local.mockReturnValue({
       id: "source-file",

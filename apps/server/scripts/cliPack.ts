@@ -24,6 +24,7 @@ import {
 
 export interface PackPackageJson {
   name: string;
+  license: string;
   repository: {
     type: string;
     url: string;
@@ -40,6 +41,7 @@ export interface PackPackageJson {
 
 const ServerPackPackageJson = Schema.Struct({
   name: Schema.String,
+  license: Schema.String,
   repository: Schema.Struct({
     type: Schema.String,
     url: Schema.String,
@@ -69,9 +71,10 @@ const readServerPackPackageJson = Effect.fn("readServerPackPackageJson")(functio
   const fs = yield* FileSystem.FileSystem;
   const parsed = yield* decodeJsonUnknown(yield* fs.readFileString(packageJsonPath));
   const record = parsed as Record<string, unknown>;
-  // Pick known fields so license/scripts/devDependencies do not need a schema.
+  // Pick only the metadata and runtime dependencies needed by the published package.
   return yield* decodeServerPackPackageJson({
     name: record.name,
+    license: record.license,
     repository: record.repository,
     bin: record.bin,
     type: record.type,
@@ -94,12 +97,13 @@ export function createPackPackageJson(input: {
 }): PackPackageJson {
   return {
     name: input.serverPackageJson.name,
+    license: input.serverPackageJson.license,
     repository: input.serverPackageJson.repository,
     bin: input.serverPackageJson.bin,
     type: input.serverPackageJson.type,
     version: input.version,
     engines: input.serverPackageJson.engines,
-    files: input.serverPackageJson.files,
+    files: [...new Set([...input.serverPackageJson.files, "LICENSE"])],
     dependencies: selectCliRuntimeExternalDependencies(
       resolveCatalogDependencies(
         input.serverPackageJson.dependencies,
@@ -175,6 +179,7 @@ export const packServerCli = Effect.fn("packServerCli")(function* (input: {
   const fs = yield* FileSystem.FileSystem;
   const serverDir = path.join(input.repoRoot, "apps/server");
   const packageJsonPath = path.join(serverDir, "package.json");
+  const licensePath = path.join(serverDir, "LICENSE");
   const outDir = Option.match(input.outDir, {
     onNone: () => serverDir,
     onSome: (value) => (path.isAbsolute(value) ? value : path.join(input.repoRoot, value)),
@@ -208,12 +213,15 @@ export const packServerCli = Effect.fn("packServerCli")(function* (input: {
         version,
         packageJsonString: yield* encodePackageJson(pkg),
         originalPackageJson: yield* fs.readFile(packageJsonPath),
+        license: yield* fs.readFile(path.join(input.repoRoot, "LICENSE")),
+        originalLicense: (yield* fs.exists(licensePath)) ? yield* fs.readFile(licensePath) : null,
         icons: yield* preparePublishIcons(input.repoRoot, serverDir, version),
       };
     }),
     (resource) =>
       Effect.gen(function* () {
         yield* fs.writeFileString(packageJsonPath, `${resource.packageJsonString}\n`);
+        yield* fs.writeFile(licensePath, resource.license);
         for (const icon of resource.icons) {
           yield* fs.writeFile(icon.targetPath, icon.publish);
         }
@@ -241,6 +249,11 @@ export const packServerCli = Effect.fn("packServerCli")(function* (input: {
     (resource) =>
       Effect.gen(function* () {
         yield* fs.writeFile(packageJsonPath, resource.originalPackageJson);
+        if (resource.originalLicense === null) {
+          yield* fs.remove(licensePath, { force: true });
+        } else {
+          yield* fs.writeFile(licensePath, resource.originalLicense);
+        }
         for (const icon of resource.icons) {
           yield* fs.writeFile(icon.targetPath, icon.original);
         }

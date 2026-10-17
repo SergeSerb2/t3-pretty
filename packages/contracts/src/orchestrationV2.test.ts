@@ -137,6 +137,30 @@ const decodeOrchestrationV2SubscribeThreadInput = Schema.decodeUnknownSync(
 );
 
 describe("orchestration V2 contracts", () => {
+  it("loads stored threads without restoring obsolete subagent policy", () => {
+    const original = emptyThreadProjection();
+    const projection = decodeOrchestrationV2ThreadProjection({
+      ...original,
+      thread: { ...original.thread, subagentPolicy: { mode: "off" } },
+    });
+
+    expect(projection.thread.id).toBe(ThreadId.make("thread-1"));
+    expect(projection.thread.modelSelection).toEqual(original.thread.modelSelection);
+    expect(projection.thread).not.toHaveProperty("subagentPolicy");
+  });
+
+  it("rejects the retired subagent policy command", () => {
+    expect(() =>
+      decodeOrchestrationV2Command({
+        type: "thread.subagent-policy.set",
+        commandId: "retired-policy",
+        threadId: "thread-1",
+        createdAt: DateTime.formatIso(now),
+        subagentPolicy: { mode: "off" },
+      }),
+    ).toThrow();
+  });
+
   it("round-trips provider questions whose options omit descriptions", () => {
     const base = {
       id: "question-item",

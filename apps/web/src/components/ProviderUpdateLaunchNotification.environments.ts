@@ -10,6 +10,7 @@ import {
   type EnvironmentUpdateConnectionState,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
+  serverUpdatesProvidersAutomatically,
 } from "./ProviderUpdateLaunchNotification.logic";
 
 /**
@@ -87,6 +88,7 @@ export function useLocalEnvironmentUpdateGroups(): {
           ? "ready"
           : normalizeConnectionState(environment.connection.phase),
         providers: serverConfig?.providers ?? [],
+        updatesAutomatically: serverUpdatesProvidersAutomatically(serverConfig),
       });
     }
 

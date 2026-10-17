@@ -53,6 +53,65 @@ describe("fallbackTextGenerationModelSelection", () => {
 });
 
 describe("serverSettings helpers", () => {
+  it("rejects delayed rail snapshots and replaces removed assignments atomically", () => {
+    const original = {
+      version: 10,
+      folders: [{ id: "work", name: "Work", collapsed: false }],
+      assignments: { a: "work", b: "work" },
+      projectOrder: ["a", "b"],
+    };
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      sidebarProjectLayout: original,
+    });
+    const edited = {
+      ...original,
+      version: 20,
+      assignments: { b: "work" },
+      projectOrder: ["b", "a"],
+    };
+    const current = applyServerSettingsPatch(first, { sidebarProjectLayout: edited });
+    expect(current.sidebarProjectLayout).toEqual(edited);
+    expect(current.sidebarProjectFolderAssignments).toEqual({ b: "work" });
+    const delayed = applyServerSettingsPatch(current, {
+      sidebarProjectLayout: original,
+      sidebarAutoSettleOnMerge: false,
+    });
+    expect(delayed.sidebarProjectLayout).toEqual(edited);
+    expect(delayed.sidebarProjectFolderAssignments).toEqual({ b: "work" });
+    expect(delayed.sidebarAutoSettleOnMerge).toBe(false);
+  });
+
+  it("converges concurrent rail snapshots regardless of request arrival order", () => {
+    const a = { version: 10, folders: [], assignments: {}, projectOrder: ["a", "b"] };
+    const b = { ...a, projectOrder: ["b", "a"] };
+    const apply = (first: typeof a, last: typeof a) =>
+      applyServerSettingsPatch(
+        applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { sidebarProjectLayout: first }),
+        { sidebarProjectLayout: last },
+      );
+    expect(apply(a, b).sidebarProjectLayout).toEqual(apply(b, a).sidebarProjectLayout);
+  });
+
+  it("retains edits from older clients without restoring their old manual project order", () => {
+    const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      sidebarProjectLayout: {
+        version: 10,
+        folders: [{ id: "work", name: "Work", collapsed: false }],
+        assignments: { a: "work" },
+        projectOrder: ["b", "a"],
+      },
+    });
+    const edited = applyServerSettingsPatch(first, {
+      sidebarProjectFolders: [],
+      sidebarProjectFolderAssignments: {},
+    });
+    expect(edited.sidebarProjectLayout).toEqual({
+      version: 11,
+      folders: [],
+      assignments: {},
+      projectOrder: ["b", "a"],
+    });
+  });
   it("changes a cleanup rule without replacing the machine's other rules", () => {
     const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },

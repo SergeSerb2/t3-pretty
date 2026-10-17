@@ -17,6 +17,7 @@ import {
   insertComposerDraftContext,
   insertComposerDraftText,
   rememberComposerDraftSelection,
+  scheduleUnusedComposerAttachmentCleanup,
   setComposerDraftContext,
   setComposerContextImporting,
   useComposerDraft,
@@ -78,13 +79,24 @@ export function ComposerEditor({
     null,
   );
   const importRef = useRef<AbortController | null>(null);
-  const [importing, setImporting] = useState(false);
-  useEffect(
-    () => () => {
-      importRef.current?.abort();
-    },
-    [draftKey],
-  );
+  const [importSession, setImportSession] = useState<{
+    readonly draftKey: string;
+    readonly controller: AbortController;
+  } | null>(null);
+  const importing =
+    importSession !== null &&
+    importSession.draftKey === draftKey &&
+    !importSession.controller.signal.aborted;
+  useEffect(() => {
+    return () => {
+      const controller = importRef.current;
+      importRef.current = null;
+      controller?.abort();
+      // Network work can outlive cancellation. Release this draft immediately
+      // so returning to it, or switching the retained editor, stays editable.
+      if (draftKey && controller) setComposerContextImporting(draftKey, false);
+    };
+  }, [draftKey]);
   const pasteContext = async (
     clipboard: Parameters<NonNullable<NativeComposerEditorProps["onPasteContext"]>>[0],
   ) => {
@@ -92,7 +104,7 @@ export function ComposerEditor({
     const insertion = { text: clipboard.value, ...clipboard.selection };
     const controller = new AbortController();
     importRef.current = controller;
-    setImporting(true);
+    setImportSession({ draftKey, controller });
     setComposerContextImporting(draftKey, true);
     try {
       const retained = getComposerDraftAfterSelection(draftKey, insertion);
@@ -102,6 +114,10 @@ export function ComposerEditor({
         controller.signal,
         retained.context?.records.length ?? 0,
       );
+      if (controller.signal.aborted) {
+        if (result) scheduleUnusedComposerAttachmentCleanup(result.attachments);
+        return;
+      }
       if (!result) {
         insertComposerDraftText(draftKey, clipboard.text, insertion);
         return;
@@ -125,9 +141,12 @@ export function ComposerEditor({
           error instanceof Error ? error.message : "Try copying again.",
         );
     } finally {
-      setComposerContextImporting(draftKey, false);
-      importRef.current = null;
-      setImporting(false);
+      // An older import must not unlock a newer import in the same editor.
+      if (importRef.current === controller) {
+        setComposerContextImporting(draftKey, false);
+        importRef.current = null;
+        setImportSession(null);
+      }
     }
   };
   const clipboardFragment = useMemo(

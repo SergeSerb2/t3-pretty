@@ -6,8 +6,10 @@ import { beforeEach, vi } from "vite-plus/test";
 import { describe, expect, it } from "@effect/vitest";
 import Constants from "expo-constants";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { Cookies, FetchHttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ManagedRelay } from "@t3tools/client-runtime/relay";
@@ -43,6 +45,7 @@ import {
   shouldRegisterAgentAwarenessDeviceForProvider,
   subscribeHasArmedLiveActivity,
   unregisterAgentAwarenessConnection,
+  unregisterAgentAwarenessDeviceForCurrentUser,
   updateAgentAwarenessRegistrationPreferences,
 } from "./remoteRegistration";
 import * as Notifications from "expo-notifications";
@@ -548,6 +551,246 @@ describe("makeRelayDeviceRegistrationRequest", () => {
 
     expect(end).toHaveBeenCalledWith("immediate");
     expect(appStateMock.listeners).toHaveLength(0);
+  });
+
+  it.effect.each(["sign-out", "account-switch", "unmount"] as const)(
+    "discards an activity snapshot that completes after %s",
+    (transition) => {
+      Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
+      vi.mocked(loadPreferences).mockResolvedValueOnce({ liveActivitiesEnabled: true });
+      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
+
+      return Effect.gen(function* () {
+        const client = yield* ManagedRelay.ManagedRelayClient;
+        const getSnapshot = vi.fn(() =>
+          Effect.sync(() => {
+            if (transition === "unmount") {
+              releaseAgentAwarenessRelayTokenProvider();
+            } else {
+              setAgentAwarenessRelayTokenProvider(
+                transition === "sign-out" ? null : () => Promise.resolve("clerk-token-user-b"),
+                transition === "sign-out" ? undefined : "user-b",
+              );
+            }
+            return {
+              aggregate: {
+                title: "T3 Pretty",
+                subtitle: "Previous account work",
+                activeCount: 1,
+                updatedAt: "2026-10-16T12:00:00.000Z",
+                activities: [],
+              },
+            };
+          }),
+        );
+        yield* refreshActiveLiveActivityRemoteRegistration().pipe(
+          Effect.provideService(ManagedRelay.ManagedRelayClient, {
+            ...client,
+            getAgentActivitySnapshot: getSnapshot,
+          }),
+        );
+
+        expect(getSnapshot).toHaveBeenCalledOnce();
+        expect(widgetMocks.start).not.toHaveBeenCalled();
+        expect(hasArmedLiveActivity()).toBe(false);
+      }).pipe(Effect.provide(layerRelayTest));
+    },
+  );
+
+  it.effect("does not restore a pending activity token listener after sign-out", () => {
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
+    const addPushTokenListener = vi.fn(() => ({ remove: vi.fn() }));
+    const activity = {
+      getPushToken: () => {
+        setAgentAwarenessRelayTokenProvider(null);
+        return Promise.resolve(null);
+      },
+      addPushTokenListener,
+    };
+
+    return Effect.gen(function* () {
+      expect(yield* registerLiveActivityPushToken({ activity: activity as never })).toBe(false);
+      expect(addPushTokenListener).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layerRelayTest));
+  });
+
+  it.effect("does not register an activity with a token read from a detached account", () => {
+    Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
+    setAgentAwarenessRelayTokenProvider(() => {
+      releaseAgentAwarenessRelayTokenProvider();
+      return Promise.resolve("clerk-token-user-a");
+    }, "user-a");
+    const activity = {
+      getPushToken: () => Promise.resolve("activity-token"),
+      addPushTokenListener: vi.fn(),
+    };
+
+    return Effect.gen(function* () {
+      const client = yield* ManagedRelay.ManagedRelayClient;
+      const registerLiveActivity = vi.fn(() => Effect.succeed({ ok: true as const }));
+      const registered = yield* registerLiveActivityPushToken({ activity: activity as never }).pipe(
+        Effect.provideService(ManagedRelay.ManagedRelayClient, {
+          ...client,
+          registerLiveActivity,
+        }),
+      );
+
+      expect(registered).toBe(false);
+      expect(registerLiveActivity).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layerRelayTest));
+  });
+
+  it.effect.each([
+    { kind: "activity", transition: "sign-out" },
+    { kind: "activity", transition: "account-switch" },
+    { kind: "activity", transition: "unmount" },
+    { kind: "device", transition: "sign-out" },
+    { kind: "device", transition: "account-switch" },
+    { kind: "device", transition: "unmount" },
+  ] as const)(
+    "cancels an in-flight $kind relay write before $transition cleanup",
+    ({ kind, transition }) =>
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        let request: Request | undefined;
+        let completeRequest = () => {};
+        let registered = false;
+        let delayRegistration = true;
+        const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+          const next = new Request(input, init);
+          if (next.url.endsWith("/v1/client/dpop-token"))
+            return Response.json({
+              access_token: "inflight-dpop-token",
+              issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
+              token_type: "DPoP",
+              expires_in: 300,
+              scope: "mobile:registration",
+            });
+          if (next.method === "DELETE") {
+            registered = false;
+            return Response.json({ ok: true });
+          }
+          if (!delayRegistration) {
+            registered = true;
+            return Response.json({ ok: true });
+          }
+          request = next;
+          return new Promise<Response>((resolve, reject) => {
+            completeRequest = () => {
+              if (!next.signal.aborted) {
+                registered = true;
+                resolve(Response.json({ ok: true }));
+              }
+            };
+            next.signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+            Deferred.doneUnsafe(started, Effect.void);
+          });
+        };
+        Constants.expoConfig!.extra = { relay: { url: "https://inflight-relay.example.test" } };
+        setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
+        const activity = {
+          getPushToken: () => Promise.resolve("inflight-activity-token"),
+          addPushTokenListener: vi.fn(),
+        };
+        const operation =
+          kind === "activity"
+            ? registerLiveActivityPushToken({ activity: activity as never })
+            : refreshAgentAwarenessRegistration();
+        yield* Effect.gen(function* () {
+          const registering = yield* operation.pipe(Effect.forkScoped);
+          yield* Deferred.await(started);
+          if (transition === "unmount") {
+            releaseAgentAwarenessRelayTokenProvider();
+            yield* Fiber.await(registering);
+          } else {
+            setAgentAwarenessRelayTokenProvider(
+              transition === "sign-out" ? null : () => Promise.resolve("clerk-token-user-b"),
+              transition === "sign-out" ? undefined : "user-b",
+            );
+            yield* unregisterAgentAwarenessDeviceForCurrentUser(() =>
+              Promise.resolve("clerk-token-user-a"),
+            );
+          }
+          const aborted = request?.signal.aborted;
+          completeRequest();
+          const result = yield* Fiber.join(registering);
+          if (kind === "activity") expect(result).toBe(false);
+          expect(registered).toBe(false);
+          expect(aborted).toBe(true);
+          expect(getAgentAwarenessRegistrationStatus()).toBe(
+            transition === "sign-out" ? "unknown" : "pending",
+          );
+          expect(saveAgentAwarenessRegistrationRecord).not.toHaveBeenCalled();
+          if (transition === "account-switch") {
+            delayRegistration = false;
+            const next = yield* kind === "activity"
+              ? registerLiveActivityPushToken({ activity: activity as never })
+              : refreshAgentAwarenessRegistration();
+            if (kind === "activity") expect(next).toBe(true);
+            expect(registered).toBe(true);
+          }
+        }).pipe(
+          Effect.provideService(FetchHttpClient.Fetch, fetch),
+          Effect.provide(
+            ManagedRelayLayer.layer("https://inflight-relay.example.test").pipe(
+              Layer.provide(Layer.mergeAll(FetchHttpClient.layer, Dpop.layer)),
+            ),
+          ),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect(
+    "keeps an activity registration in flight when the same account refreshes its token provider",
+    () => {
+      Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
+      setAgentAwarenessRelayTokenProvider(() => Promise.resolve("initial-token"), "user-a");
+      const activity = {
+        getPushToken: () => Promise.resolve("same-account-activity-token"),
+        addPushTokenListener: vi.fn(),
+      };
+      return Effect.gen(function* () {
+        const client = yield* ManagedRelay.ManagedRelayClient;
+        const registerLiveActivity = vi.fn(() =>
+          Effect.sync(() => {
+            setAgentAwarenessRelayTokenProvider(() => Promise.resolve("refreshed-token"), "user-a");
+            return { ok: true as const };
+          }),
+        );
+        const register = registerLiveActivityPushToken({ activity: activity as never }).pipe(
+          Effect.provideService(ManagedRelay.ManagedRelayClient, {
+            ...client,
+            registerLiveActivity,
+          }),
+        );
+        expect(yield* register).toBe(true);
+        expect(yield* register).toBe(true);
+        expect(registerLiveActivity).toHaveBeenCalledOnce();
+      }).pipe(Effect.provide(layerRelayTest));
+    },
+  );
+
+  it.effect("does not rearm local work after sign-out during the preference read", () => {
+    setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk-token-user-a"), "user-a");
+    vi.mocked(loadPreferences).mockImplementationOnce(() => {
+      setAgentAwarenessRelayTokenProvider(null);
+      return Promise.resolve({ liveActivitiesEnabled: true });
+    });
+    armAgentAwarenessLiveActivityForLocalWork({
+      environmentId: "env-1" as EnvironmentId,
+      threadTitle: "Previous account work",
+      projectTitle: "t3-pretty",
+    });
+
+    return Effect.gen(function* () {
+      yield* runBackgroundOperations();
+      expect(widgetMocks.start).not.toHaveBeenCalled();
+      expect(hasArmedLiveActivity()).toBe(false);
+    }).pipe(Effect.provide(layerRelayTest));
   });
 
   it.effect("refreshes APNs registration for connected environments after settings changes", () => {

@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
+import { TriangleAlertIcon } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 
 import { cn } from "~/lib/utils";
@@ -7,6 +8,7 @@ import { serverEnvironment } from "~/state/server";
 import { useServerUpdate } from "../ServerUpdateAction";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   describeUpdateCapsule,
   formatUpdateElapsed,
@@ -67,10 +69,10 @@ function localStatusLabel(run: UpdateEverythingRun, local: UpdateRunLocalState, 
 }
 
 /**
- * The sidebar update button while an "update everything" pass runs. It grows
- * left into the free footer space and names the most urgent thing: this
- * app's restart countdown, a slow machine, progress, or a failure. Click it
- * for every machine. Time labels change once a second only during the
+ * The sidebar update button while an "update everything" pass runs. The rail
+ * stacks the icon and compact progress; horizontal footers show the full
+ * status inline. Click it for every machine and the rail's actions.
+ * Time labels change once a second only during the
  * countdown, and otherwise once every 30 seconds.
  */
 export function SidebarUpdateCapsule({
@@ -78,10 +80,12 @@ export function SidebarUpdateCapsule({
   local,
   icon,
   onRestart,
+  vertical = false,
 }: {
   readonly run: UpdateEverythingRun;
   readonly local: UpdateRunLocalState;
   readonly icon: ReactNode;
+  readonly vertical?: boolean;
   /** Installs this app's downloaded update after the user postponed it. */
   readonly onRestart?: () => Promise<void>;
 }) {
@@ -94,6 +98,9 @@ export function SidebarUpdateCapsule({
   const updateServer = useServerUpdate();
   const failed = machines.some(({ status }) => status === "failed");
   const settled = !hasActiveMachine && run.localVersion === null;
+  const statusLabel = view.slow
+    ? `${view.label} ${view.slow.status} ${view.slow.elapsed}`
+    : view.label;
 
   const actionLabel =
     view.action === "later" ? "Later" : view.action === "retry" ? "Retry" : "Dismiss";
@@ -107,45 +114,79 @@ export function SidebarUpdateCapsule({
     <Popover>
       <div
         className={cn(
-          "relative flex h-8 min-w-0 flex-1 items-center rounded-full bg-sidebar-control-surface text-sidebar-foreground",
+          "relative flex min-w-0 items-center bg-sidebar-control-surface text-sidebar-foreground",
+          vertical
+            ? "w-8 shrink-0 flex-col rounded-[var(--control-radius)] pb-1"
+            : "h-8 flex-1 rounded-full",
           view.tone === "slow" && "ring-1 ring-warning/40 ring-inset",
           view.tone === "failed" && "ring-1 ring-destructive/40 ring-inset",
         )}
       >
-        <PopoverTrigger
-          render={
-            <button
-              type="button"
-              aria-label={
-                view.slow ? `${view.label} ${view.slow.status} ${view.slow.elapsed}` : view.label
-              }
-              className="absolute inset-0 cursor-pointer rounded-full outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset"
-            />
-          }
-        />
-        <span className="pointer-events-none relative min-w-0 flex-1 truncate pl-3 text-xs">
-          <span className={cn(view.tone === "failed" && "text-destructive")}>{view.label}</span>
-          {view.slow ? (
-            <span className="text-warning tabular-nums"> {view.slow.elapsed}</span>
-          ) : null}
-        </span>
-        {/* The footer leaves little room, so an action takes the icon's place. */}
-        {view.action !== null ? (
-          <button
-            type="button"
-            className="relative shrink-0 cursor-pointer pr-3 pl-1.5 text-xs underline decoration-muted-foreground/60 underline-offset-3 hover:decoration-current"
-            onClick={runAction}
-          >
-            {actionLabel}
-          </button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={statusLabel}
+                    className="absolute inset-0 cursor-pointer rounded-[inherit] outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset"
+                  />
+                }
+              />
+            }
+          />
+          <TooltipPopup side={vertical ? "right" : "top"}>{statusLabel}</TooltipPopup>
+        </Tooltip>
+        {vertical ? (
+          <>
+            {/* The update button's full slot, so the icon and its download
+                ring stay put when a run starts and only the label grows below. */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none relative grid size-8 shrink-0 place-items-center",
+                view.tone === "slow" && "text-warning",
+                view.tone === "failed" && "text-destructive",
+              )}
+            >
+              {view.tone === "default" ? icon : <TriangleAlertIcon className="size-4" />}
+            </span>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none relative max-w-full truncate text-2xs leading-3 tabular-nums"
+            >
+              {view.compactLabel}
+            </span>
+          </>
         ) : (
-          <span className="pointer-events-none relative grid size-8 shrink-0 place-items-center">
-            {icon}
-          </span>
+          <>
+            <span className="pointer-events-none relative min-w-0 flex-1 truncate pl-3 text-xs">
+              <span className={cn(view.tone === "failed" && "text-destructive")}>{view.label}</span>
+              {view.slow ? (
+                <span className="text-warning tabular-nums"> {view.slow.elapsed}</span>
+              ) : null}
+            </span>
+            {/* The footer leaves little room, so an action takes the icon's place. */}
+            {view.action !== null ? (
+              <button
+                type="button"
+                className="relative shrink-0 cursor-pointer pr-3 pl-1.5 text-xs underline decoration-muted-foreground/60 underline-offset-3 hover:decoration-current"
+                onClick={runAction}
+              >
+                {actionLabel}
+              </button>
+            ) : (
+              <span className="pointer-events-none relative grid size-8 shrink-0 place-items-center">
+                {icon}
+              </span>
+            )}
+          </>
         )}
       </div>
-      <PopoverPopup side="top" align="end" padding="compact" width="sm">
+      <PopoverPopup side={vertical ? "right" : "top"} align="end" padding="compact" width="sm">
         <div className="flex flex-col gap-1 text-xs">
+          {vertical ? <div className="mb-1 font-medium">{statusLabel}</div> : null}
           {run.localVersion !== null ? (
             <div className="flex items-center justify-between gap-3">
               <span>This app</span>
@@ -182,16 +223,18 @@ export function SidebarUpdateCapsule({
               ) : null}
             </div>
           ))}
-          {settled && failed ? (
+          {view.action !== null && (vertical || (settled && failed)) ? (
             <div className="mt-1 flex justify-end gap-1">
-              {view.action === "retry" ? (
+              {view.action !== "dismiss" ? (
                 <Button size="xs" variant="outline" onClick={runAction}>
-                  Retry
+                  {actionLabel}
                 </Button>
               ) : null}
-              <Button size="xs" variant="ghost" onClick={dismissSettledUpdateRunMachines}>
-                Dismiss
-              </Button>
+              {view.action !== "later" ? (
+                <Button size="xs" variant="ghost" onClick={dismissSettledUpdateRunMachines}>
+                  Dismiss
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

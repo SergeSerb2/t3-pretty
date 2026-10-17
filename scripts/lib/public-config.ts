@@ -20,6 +20,9 @@ export interface T3CodePublicConfig {
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+export const PUBLIC_DESKTOP_UPDATE_FEED_URL =
+  "https://github.com/SergeSerb2/t3-pretty/releases/latest/download/";
+
 const REPO_ROOT = NodePath.dirname(
   NodePath.dirname(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url))),
 );
@@ -42,7 +45,7 @@ export function loadRepoEnv({
   );
   const config = resolvePublicConfig(baseEnv, localEnv, rootEnv, defaults);
 
-  return {
+  const env = {
     ...rootEnv,
     ...localEnv,
     ...baseEnv,
@@ -112,26 +115,110 @@ export function loadRepoEnv({
         }
       : {}),
   };
+  if (isPublicReleaseBuild(env, repoRoot)) assertPublicReleaseConfig(env);
+  return env;
+}
+
+/** Official snapshots and explicit release builds must never inherit maintainer services. */
+export function isPublicReleaseBuild(env: Environment, repoRoot = REPO_ROOT): boolean {
+  return (
+    env.T3CODE_PUBLIC_RELEASE === "1" ||
+    NodeFS.existsSync(NodePath.join(repoRoot, ".t3-fork/public-release.json"))
+  );
+}
+
+export function assertPublicReleaseConfig(env: Environment): void {
+  const config = resolvePublicConfig(env);
+  const expected = {
+    buildFlavor: "public",
+    clerkPublishableKey: "pk_live_Y2xlcmsudDMuY29kZXMk",
+    clerkJwtTemplate: "t3-relay",
+    clerkCliOAuthClientId: "hzxSgY2cH10sDU2r",
+    relayUrl: "https://relay.t3.codes",
+  } as const;
+  for (const [key, value] of Object.entries(expected)) {
+    if (config[key as keyof typeof expected] !== value) {
+      throw new Error(`Public release requires official T3 Connect configuration (${key}).`);
+    }
+  }
+  const domains = env.T3CODE_CLERK_PASSKEY_RP_DOMAINS?.trim();
+  if (domains && domains.split(",").some((domain) => domain.trim() !== "clerk.t3.codes")) {
+    throw new Error("Public release passkey domains must use clerk.t3.codes.");
+  }
+  const updateFeed = env.T3CODE_DESKTOP_UPDATE_FEED_URL?.trim();
+  if (updateFeed && updateFeed !== PUBLIC_DESKTOP_UPDATE_FEED_URL) {
+    throw new Error("Public release desktop updates must use the public GitHub feed.");
+  }
+  const updateRepository = env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim();
+  if (updateRepository && updateRepository !== "SergeSerb2/t3-pretty") {
+    throw new Error("Public release desktop updates must use the public GitHub repository.");
+  }
+  // No public client tracing destination is configured. These values are
+  // embedded in web bundles and Expo manifests, including their ingest tokens.
+  if (
+    config.mobileOtlpTracesUrl ||
+    config.mobileOtlpTracesDataset ||
+    config.mobileOtlpTracesToken ||
+    config.relayClientOtlpTracesUrl ||
+    config.relayClientOtlpTracesDataset ||
+    config.relayClientOtlpTracesToken
+  ) {
+    throw new Error("Public release must not include inherited client tracing configuration.");
+  }
+  // A public EAS project is optional for native local builds. Only a separately
+  // selected public project may enable OTA; disabling updates does not make an
+  // inherited internal EAS identity safe to publish.
+  const project = env.T3CODE_MOBILE_EAS_PROJECT_ID?.trim();
+  const publicProject = env.T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID?.trim();
+  const internalProject = "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65";
+  if (project && (project.toLowerCase() === internalProject || project !== publicProject)) {
+    throw new Error("Public release requires a distinct, explicitly selected public EAS project.");
+  }
+  const updateUrl = env.T3CODE_MOBILE_UPDATE_URL?.trim();
+  if (updateUrl && (!project || updateUrl !== `https://u.expo.dev/${project}`)) {
+    throw new Error("Public release OTA URL must match its selected public EAS project.");
+  }
 }
 
 /**
- * Version of the T3 Pretty release train. Fork builds prefer the checked-in
- * upstream nightly marker so mobile binaries advance with the code they ship;
- * ordinary releases fall back to apps/web/package.json. The mobile app derives
+ * Version of the T3 Pretty release train. Public snapshots use their cut version;
+ * explicit public builds use the aligned web package version. Internal builds
+ * prefer the upstream nightly marker so mobile binaries advance with the code
+ * they ship. Other builds fall back to apps/web/package.json. The mobile app derives
  * its CFBundleShortVersionString from this (app.config.ts cannot compute a
  * repo-relative path itself: Expo's config loader evaluates it as CJS, where
  * import.meta is unavailable).
  */
-export function readReleaseTrainVersion(repoRoot = REPO_ROOT): string | undefined {
-  try {
-    const nightly = readUtf8FileBounded(
-      NodePath.join(repoRoot, ".t3-fork/upstream-nightly"),
+export function readReleaseTrainVersion(
+  repoRoot = REPO_ROOT,
+  env: Environment = process.env,
+): string | undefined {
+  if (isPublicReleaseBuild(env, repoRoot)) {
+    const marker = readUtf8FileBounded(
+      NodePath.join(repoRoot, ".t3-fork/public-release.json"),
       MAX_RELEASE_TRAIN_MARKER_BYTES,
-    )?.trim();
-    if (!nightly) throw new Error("No fork release-train marker");
-    if (/^v?\d+\.\d+\.\d+/.test(nightly)) return nightly.replace(/^v/, "");
-  } catch {
-    // Non-fork and pre-sync checkouts use the package version below.
+    );
+    if (marker) {
+      const version = (JSON.parse(marker) as { version?: unknown }).version;
+      if (
+        typeof version !== "string" ||
+        !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)
+      ) {
+        throw new Error("Public release marker must contain a numeric release version.");
+      }
+      return version;
+    }
+  } else {
+    try {
+      const nightly = readUtf8FileBounded(
+        NodePath.join(repoRoot, ".t3-fork/upstream-nightly"),
+        MAX_RELEASE_TRAIN_MARKER_BYTES,
+      )?.trim();
+      if (!nightly) throw new Error("No fork release-train marker");
+      if (/^v?\d+\.\d+\.\d+/.test(nightly)) return nightly.replace(/^v/, "");
+    } catch {
+      // Non-fork and pre-sync checkouts use the package version below.
+    }
   }
 
   try {

@@ -28,6 +28,7 @@ const decodeWorkspaceCatalog = Schema.decodeUnknownSync(fromYaml(WorkspaceCatalo
 
 const fixturePackageJson = {
   name: "t3",
+  license: "MIT",
   version: "0.0.0-fixture",
   repository: {
     type: "git",
@@ -64,6 +65,7 @@ const writeFixtureRepo = Effect.fn("writeFixtureRepo")(function* () {
     `${JSON.stringify(fixturePackageJson, null, 2)}\n`,
   );
   yield* fs.writeFileString(path.join(serverDir, "dist/bin.mjs"), "export {}\n");
+  yield* fs.writeFileString(path.join(repoRoot, "LICENSE"), "MIT License\nCopyright fixture\n");
   yield* fs.writeFileString(path.join(clientDir, "index.html"), "<html></html>\n");
 
   for (const icon of resolveWebIconOverrides(
@@ -92,6 +94,7 @@ const readTarballPackageJson = (tarballPath: string) =>
       }
       return JSON.parse(extract.stdout) as {
         version: string;
+        license: string;
         dependencies: Record<string, string>;
         overrides: Record<string, string>;
       };
@@ -149,6 +152,7 @@ describe("createPackPackageJson", () => {
     const pkg = createPackPackageJson({
       serverPackageJson: {
         name: serverPackageJson.name,
+        license: serverPackageJson.license,
         repository: serverPackageJson.repository,
         bin: serverPackageJson.bin,
         type: serverPackageJson.type,
@@ -209,6 +213,12 @@ it.layer(NodeServices.layer)("packServerCli", (it) => {
       assert.isTrue(yield* fs.exists(tarballPath));
       const packed = yield* readTarballPackageJson(tarballPath);
       assert.equal(packed.version, "1.2.3");
+      assert.equal(packed.license, "MIT");
+      assert.equal(
+        (yield* readTarballIcon(tarballPath, "package/LICENSE")).toString(),
+        "MIT License\nCopyright fixture\n",
+      );
+      assert.isFalse(yield* fs.exists(path.join(serverDir, "LICENSE")));
       assert.deepStrictEqual(packed.dependencies, {
         "node-pty": "^1.1.0",
       });

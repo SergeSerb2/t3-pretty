@@ -219,10 +219,6 @@ The safety/access and permission policy for a thread or session. [The contracts]
 
 The agent interaction style for a thread, separate from its permission policy. In [the contracts][1], the values are `default` and `plan`.
 
-#### Subagent policy
-
-Whether a thread may spawn provider-native children, and which model those children should use. Global defaults live in server settings; a thread can inherit, turn spawning off, or pin its own child. T3 observes native Task/collab children — it does not spawn them. See [subagents](../user/subagents.md) and `packages/contracts/src/subagentPolicy.ts`.
-
 #### App
 
 An external service (Gmail, GitHub, Linear, …) connected to an environment as a remote MCP server, reached by every provider through the server's `/mcp/apps/<id>` proxy — alongside the built-in MCP servers `t3-code`, `t3-code-computer` (`${endpoint}/computer-use`) and `t3-code-automations` (`${endpoint}/automations`) — and addressed in chat as `@slug`. Records live in `ServerSettings.apps` (server-written), credentials in the secret store. See `packages/contracts/src/apps.ts`, `packages/contracts/src/appsCatalog.ts`, and [apps.md](./apps.md).

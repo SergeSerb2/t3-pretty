@@ -1,8 +1,9 @@
 import type { ThreadId } from "@t3tools/contracts";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+import {
+  formatComposerContextReference,
+  toKindScopedComposerContextId,
+} from "@t3tools/shared/composerContextReferences";
 import { stripHiddenInstructionSuffixes } from "@t3tools/shared/hiddenInstructionBlocks";
-
-import { toKindScopedComposerContextId } from "./composerContextReferences";
 
 export interface ParsedTerminalContextEntry {
   header: string;

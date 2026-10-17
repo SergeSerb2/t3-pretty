@@ -1,9 +1,8 @@
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -20,10 +19,8 @@ import { MintGlassButton } from "../../components/MintGlassButton";
 import { PulseRing } from "../../components/PulseRing";
 import { cn } from "../../lib/cn";
 import { enterFadeDown, enterPop, exitFade, MOTION_TIMING } from "../../lib/motion";
-import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
-import { NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED } from "../layout/native-mail-search-toolbar";
 import { GLASS_CARD_CLASS_NAME } from "../scenery/glassStyles";
 import { CAUGHT_UP_TONE, TONE_BY_BADGE } from "./HomeGlance";
 import type { HomeGlanceSummary } from "./home-glance";
@@ -41,19 +38,7 @@ const ACCESSIBLE_DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
-/**
- * iPhone Home replaces the native title bar, search row and glance card with
- * one floating row. iPad columns and the iOS Mail-style search toolbar keep
- * their native headers.
- */
-export function useHomeTopBarActive(): boolean {
-  const primaryColumn = use(NativePrimaryColumnContext);
-  return (
-    Platform.OS === "ios" &&
-    !(Platform.isPad && primaryColumn !== null) &&
-    !NATIVE_MAIL_SEARCH_TOOLBAR_SUPPORTED
-  );
-}
+export { useHomeTopBarActive } from "./home-toolbar-ownership";
 
 /** Space the list reserves above its first row for the floating top bar. */
 export function useHomeTopBarInset(): number {

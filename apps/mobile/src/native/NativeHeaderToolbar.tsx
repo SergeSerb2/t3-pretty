@@ -18,7 +18,6 @@ import type { ColorValue } from "react-native";
 import type { HeaderBarButtonSearchBarPlacementItem } from "react-native-screens";
 import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
 
-import { mintGlassHeaderItems } from "./mintGlassHeaderItems";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native-glass";
 
 function useNativeStackNavigation(): NativeStackNavigationProp<ParamListBase> | null {
@@ -249,13 +248,11 @@ function NativeHeaderToolbarRoot(props: {
     const headerItems = items.filter(
       (item): item is NativeStackHeaderItem => item.type !== "searchBarPlacement",
     );
-    // Bar items become mint glass views; the bottom UIToolbar stays native.
-    const glassItems = mintGlassHeaderItems(headerItems);
     if (props.placement === "left") {
-      navigation.setOptions({ unstable_headerLeftItems: () => glassItems });
+      navigation.setOptions({ unstable_headerLeftItems: () => headerItems });
       return;
     }
-    navigation.setOptions({ unstable_headerRightItems: () => glassItems });
+    navigation.setOptions({ unstable_headerRightItems: () => headerItems });
   }, [items, navigation, props.placement, tabActive]);
 
   useLayoutEffect(() => {

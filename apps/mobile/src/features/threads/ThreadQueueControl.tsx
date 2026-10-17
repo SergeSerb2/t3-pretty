@@ -1,6 +1,7 @@
 import { type StaticScreenProps, useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -58,6 +59,10 @@ const GLASS_ROW_STYLE = {
   borderWidth: StyleSheet.hairlineWidth,
 } as const;
 
+const EMPTY_QUEUED_COUNT_ATOM = Atom.make(0).pipe(
+  Atom.withLabel("mobile-thread-queue-count:empty"),
+);
+
 type QueueTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
 type QueueAction = "steer" | "edit" | "up" | "down" | "remove";
 type QueueRowLayout = { readonly id: RunId; readonly y?: number; readonly height?: number };
@@ -66,8 +71,10 @@ export function useThreadQueueWorkflow(target: QueueTarget) {
   return useAtomValue(environmentThreadDetails.queueWorkflowAtom(target));
 }
 
-export function useThreadQueuedCount(target: QueueTarget) {
-  return useAtomValue(environmentThreadDetails.queuedCountAtom(target));
+export function useThreadQueuedCount(target: QueueTarget | null) {
+  return useAtomValue(
+    target === null ? EMPTY_QUEUED_COUNT_ATOM : environmentThreadDetails.queuedCountAtom(target),
+  );
 }
 
 export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {

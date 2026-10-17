@@ -26,6 +26,396 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261015.3176050001",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "improved",
+        title: "Remove obsolete Agents page and policy",
+      },
+      {
+        kind: "new",
+        title: "Route new threads by weekly Agent Perf scores",
+      },
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003633",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "improved",
+        title: "Remove obsolete Agents page and policy",
+      },
+      {
+        kind: "new",
+        title: "Route new threads by weekly Agent Perf scores",
+      },
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003631",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "new",
+        title: "Route new threads by weekly Agent Perf scores",
+      },
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003629",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003621",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003619",
+    date: "2026-10-16",
+    items: [
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176003613",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3171003611",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "improved",
+        title: "Make the desktop app lighter at startup, while streaming, and when idle",
+      },
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3171003608",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "new",
+        title: "Send files between Connect threads",
+      },
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+      {
+        kind: "new",
+        title: "Public thread snapshot links",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3171003607",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Avoid redundant work during sidebar hover",
+      },
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+      {
+        kind: "new",
+        title: "Public thread snapshot links",
+      },
+      {
+        kind: "fixed",
+        title: "Improve iOS thread exit swipes",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3171003604",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+      {
+        kind: "new",
+        title: "Public thread snapshot links",
+      },
+      {
+        kind: "fixed",
+        title: "Improve iOS thread exit swipes",
+      },
+      {
+        kind: "new",
+        title: "Haptics to key iOS interactions",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3158003595",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Project rail layouts in sync across machines",
+      },
+      {
+        kind: "fixed",
+        title: "Fit update progress into the vertical rail",
+      },
+      {
+        kind: "fixed",
+        title: "Working rows scoped to their environment",
+      },
+      {
+        kind: "new",
+        title: "Public thread snapshot links",
+      },
+      {
+        kind: "fixed",
+        title: "Improve iOS thread exit swipes",
+      },
+      {
+        kind: "new",
+        title: "Haptics to key iOS interactions",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3158003581",
+    date: "2026-10-15",
+    items: [
+      {
+        kind: "fixed",
+        title: "Improve iOS thread exit swipes",
+      },
+      {
+        kind: "new",
+        title: "Haptics to key iOS interactions",
+      },
+      {
+        kind: "fixed",
+        title: "Preserve read-only thread card frames",
+      },
+      {
+        kind: "fixed",
+        title: "Hide threads from disconnected environments",
+      },
+      {
+        kind: "fixed",
+        title: "Wait for thread creation before loading detail",
+      },
+      {
+        kind: "fixed",
+        title: "Use right swipe to leave iOS threads",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261015.3145003576",
     date: "2026-10-15",
     items: [

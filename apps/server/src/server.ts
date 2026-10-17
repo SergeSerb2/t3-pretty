@@ -1,3 +1,5 @@
+import * as ThreadSharing from "./sharing/ThreadSharing.ts";
+import * as ThreadSharingHttp from "./sharing/http.ts";
 import * as AgentInstructionFiles from "./instructions/AgentInstructionFiles.ts";
 import * as SkillLibrary from "./skills/SkillLibrary.ts";
 import * as SkillMarketplace from "./skills/SkillMarketplace.ts";
@@ -80,6 +82,8 @@ import { layer as ProviderInstanceRegistryHydrationLive } from "./provider/Provi
 import * as ProjectSettingsOverrideSweep from "./provider/ProjectSettingsOverrideSweep.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as RemoteContext from "./relay/RemoteContext.ts";
+import * as RemoteContextHttp from "./relay/RemoteContextHttp.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as AutomationStore from "./automations/AutomationStore.ts";
@@ -117,6 +121,10 @@ import * as CodexInstallation from "./provider/CodexInstallation.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
+import * as ProviderAutoUpdater from "./provider/ProviderAutoUpdater.ts";
+import * as AgentPerfBenchmark from "./agentPerf/AgentPerfBenchmark.ts";
+import * as AgentPerfCli from "./agentPerf/AgentPerfCli.ts";
+import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import { layer as ProviderUsageLimitsIngestionLive } from "./provider/ProviderUsageLimitsIngestion.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -583,6 +591,7 @@ const AutomationStoreLive = AutomationStore.layer.pipe(
 
 const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   AgentMonitoring.layer,
+  ThreadSharing.layer,
   Layer.effectDiscard(
     Effect.flatMap(AutomationScheduler.AutomationScheduler, (service) => service.start()),
   ).pipe(Layer.provide(AutomationScheduler.layer), Layer.provide(PullRequestServiceLive)),
@@ -623,6 +632,15 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   // telemetry instead of waiting for the next status probe.
   ProviderUsageLimitsIngestionLive,
   ProviderInstallationRefreshLive,
+  // One runner for the server's lifetime, so automatic updates and every
+  // client's manual updates share its per-instance and per-installer locks.
+  ProviderAutoUpdater.layer.pipe(Layer.provideMerge(ProviderMaintenanceRunner.layer)),
+  // Weekly Agent Perf scores feed load balancing. The power monitor layer is
+  // the shared one, so this does not open a second desktop telemetry reader.
+  AgentPerfBenchmark.layer.pipe(
+    Layer.provide(AgentPerfCli.layer),
+    Layer.provide(HostPowerMonitorLayerLive),
+  ),
   ReplayMarkers.layer,
   // Catches overrides left behind by a project deleted before this cleanup
   // existed, or by a cleanup write that failed. See ProjectService.delete
@@ -748,6 +766,7 @@ const commandReadinessLayer = HttpRouter.middleware(
 );
 
 const makeRoutesLayer = Layer.mergeAll(
+  RemoteContextHttp.layer.pipe(Layer.provide(RemoteContext.layer)),
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
@@ -772,6 +791,7 @@ const makeRoutesLayer = Layer.mergeAll(
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
     AutomationWebhookHttp.layer,
+    ThreadSharingHttp.layer,
     AppsHttp.layer,
   ),
   // The MCP session registry is provided globally (shared with V2 provider

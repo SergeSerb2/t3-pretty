@@ -150,6 +150,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadAutoSettlementScope: Schema.optionalKey(Schema.Boolean),
   /** Server persists the opt-in for continuing interrupted threads after restarts. */
   threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
+  /** Server honors `autoUpdateProviders` and updates provider CLIs on its own. */
+  providerAutoUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server honors `agentPerfBenchmarks` and reports its score in host resources. */
+  agentPerfBenchmark: Schema.optionalKey(Schema.Boolean),
   /** Server persists `globalEnvironment` and can export those secrets to an operator. */
   globalEnvironment: Schema.optionalKey(Schema.Boolean),
   /** Server resolves `projectSettingsOverrides`; older servers ignore the key. */
@@ -182,6 +186,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands thread.pin / thread.unpin commands. Same
       version-skew contract as threadSettlement. */
   threadPinning: Schema.optionalKey(Schema.Boolean),
+  threadSharing: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.pin.reorder (and orderKey on thread.pin).
       Same version-skew contract as threadSettlement. */
   threadPinReorder: Schema.optionalKey(Schema.Boolean),
@@ -200,6 +205,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server stores the shared scenery photo catalog. Absent on older servers,
       so clients keep the catalog device-local instead of publishing it. */
   sceneryPhotoSet: Schema.optionalKey(Schema.Boolean),
+  /** Server stores shared photo blur, photo presence, and interface contrast. */
+  sceneryAppearance: Schema.optionalKey(Schema.Boolean),
+  /** Server stores and reconciles versioned project rail layouts. */
+  sidebarProjectLayout: Schema.optionalKey(Schema.Boolean),
   /** Server can start a fresh provider session and replay bounded thread
       context when a started thread switches to an incompatible provider. */
   providerHandoff: Schema.optionalKey(Schema.Boolean),

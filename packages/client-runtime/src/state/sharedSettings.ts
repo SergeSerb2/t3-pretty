@@ -24,11 +24,15 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 /** Server keys that hold a user preference rather than machine config. */
 const SHARED_SERVER_SETTING_KEYS = [
   "continueThreadsAfterServerUpdate",
+  "autoUpdateProviders",
+  "agentPerfBenchmarks",
   "sidebarAutoSettleAfterDays",
   "sidebarAutoSettleOnMerge",
   "sidebarProjectFolders",
   "sidebarProjectFolderAssignments",
+  "sidebarProjectLayout",
   "sceneryPhotoSet",
+  "sceneryAppearance",
   "autoResumeLimitedThreads",
   "snoozeLimitedThreads",
   "newWorktreesStartFromOrigin",
@@ -39,7 +43,13 @@ const SHARED_SERVER_SETTING_KEYS = [
 
 export type SharedSettingsCapabilities = Pick<
   ExecutionEnvironmentCapabilities,
-  "threadRestartContinuation" | "globalEnvironment" | "sceneryPhotoSet"
+  | "threadRestartContinuation"
+  | "providerAutoUpdate"
+  | "agentPerfBenchmark"
+  | "globalEnvironment"
+  | "sceneryPhotoSet"
+  | "sceneryAppearance"
+  | "sidebarProjectLayout"
 >;
 
 /** Fill redacted secret values from an operator export so other machines receive them. */
@@ -134,8 +144,20 @@ export function filterSharedServerPatch(
   if (capabilities?.threadRestartContinuation !== true) {
     patch = Struct.omit(patch, ["continueThreadsAfterServerUpdate"]);
   }
+  if (capabilities?.providerAutoUpdate !== true) {
+    patch = Struct.omit(patch, ["autoUpdateProviders"]);
+  }
+  if (capabilities?.agentPerfBenchmark !== true) {
+    patch = Struct.omit(patch, ["agentPerfBenchmarks"]);
+  }
   if (capabilities?.sceneryPhotoSet !== true) {
     patch = Struct.omit(patch, ["sceneryPhotoSet"]);
+  }
+  if (capabilities?.sceneryAppearance !== true) {
+    patch = Struct.omit(patch, ["sceneryAppearance"]);
+  }
+  if (capabilities?.sidebarProjectLayout !== true) {
+    patch = Struct.omit(patch, ["sidebarProjectLayout"]);
   }
   return capabilities?.globalEnvironment === true
     ? patch

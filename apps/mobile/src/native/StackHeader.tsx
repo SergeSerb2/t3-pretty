@@ -3,11 +3,9 @@ import type {
   NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from "@react-navigation/native-stack";
-import { use, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { use, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { NativeWorkspaceTabActivityContext } from "./v5-workspace-context";
 import type { ColorValue } from "react-native";
-
-import { withMintGlassHeaderItems } from "./mintGlassHeaderItems";
 
 export { NativeHeaderToolbar } from "./NativeHeaderToolbar";
 
@@ -54,19 +52,6 @@ function normalizeScreenOptions(
   if (normalized.headerTintColor !== undefined) {
     normalized.headerTintColor = String(normalized.headerTintColor);
   }
-  // Only touch keys the caller set: an explicit `undefined` would clobber
-  // items owned by NativeHeaderToolbar.
-  if (normalized.unstable_headerLeftItems) {
-    normalized.unstable_headerLeftItems = withMintGlassHeaderItems(
-      normalized.unstable_headerLeftItems,
-    );
-  }
-  if (normalized.unstable_headerRightItems) {
-    normalized.unstable_headerRightItems = withMintGlassHeaderItems(
-      normalized.unstable_headerRightItems,
-    );
-  }
-
   return normalized as NativeStackNavigationOptions;
 }
 

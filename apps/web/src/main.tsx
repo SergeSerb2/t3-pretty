@@ -65,7 +65,7 @@ const app = <AppRoot router={router} />;
 // stable. Electron keeps the fork's persistent gate and only fetches its much
 // larger Clerk runtime after a sign-in surface opens the gate.
 const browserManagedAuthShellModule =
-  clerkPublishableKey && hasCloudPublicConfig() && !isElectron
+  clerkPublishableKey && hasCloudPublicConfig() && !isElectron && isClerkGateOpen()
     ? import("./components/clerk/BrowserManagedAuthShell")
     : null;
 

@@ -87,6 +87,25 @@ describe("createComposerHoverTracker", () => {
     tracker.rest();
     expect(tracker.crossing(200, 0, 1100).speed).toBe(0);
   });
+
+  it("forgets old speed on a stationary crossing without an idle timer", () => {
+    const tracker = createComposerHoverTracker();
+    tracker.sample(0, 0, 1000);
+    tracker.sample(80, 0, 1016);
+    expect(tracker.crossing(80, 0, 1016 + COMPOSER_HOVER_SPEED_STALE_MS)).toEqual({
+      speed: 0,
+      approachSpeed: 0,
+    });
+  });
+
+  it("does not blend old approach speed into a new move after a pause", () => {
+    const tracker = createComposerHoverTracker();
+    tracker.sample(0, 0, 1000);
+    tracker.sample(80, 0, 1016);
+    const sample = tracker.sample(81, 0, 2016);
+    expect(sample.speed).toBeLessThan(0.1);
+    expect(sample.approachSpeed).toBe(0);
+  });
 });
 
 describe("composerHoverDestinationInside", () => {

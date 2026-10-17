@@ -16,6 +16,60 @@ function git(cwd: string, ...args: ReadonlyArray<string>): string {
   return NodeChildProcess.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
 
+it("keeps one coordinated release version after another platform publishes its tag", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-local-release-"));
+  const version = "0.0.33-nightly.20260809.1043000015";
+  try {
+    git(root, "init");
+    git(root, "config", "user.name", "T3 Fork Release Test");
+    git(root, "config", "user.email", "t3-fork-release-test@example.invalid");
+    git(root, "commit", "--allow-empty", "-m", "source to release");
+    git(root, "tag", "v0.0.33-nightly.20260809.1043");
+    const sha = git(root, "rev-parse", "HEAD");
+    git(root, "tag", `v${version}.fork`);
+    const run = (overrides: Record<string, string> = {}) =>
+      NodeChildProcess.spawnSync(process.execPath, [scriptPath, "--print", "version"], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: "",
+          GITHUB_RUN_NUMBER: "99",
+          T3CODE_RELEASE_VERSION: version,
+          T3CODE_RELEASE_SOURCE_SHA: sha,
+          T3_FORK_BUILD_FLOOR: "1043000015",
+          ...overrides,
+        },
+      });
+    const coordinated = run();
+    assert.equal(coordinated.status, 0);
+    assert.equal(coordinated.stdout.trim(), version);
+
+    for (const overrides of [
+      { T3CODE_RELEASE_SOURCE_SHA: "0".repeat(40) },
+      { T3CODE_RELEASE_SOURCE_SHA: "" },
+      { T3CODE_RELEASE_VERSION: "not-a-version" },
+      { T3CODE_RELEASE_VERSION: "" },
+      { T3_FORK_BUILD_FLOOR: "1043000016" },
+    ]) {
+      assert.notEqual(run(overrides).status, 0);
+    }
+
+    git(
+      root,
+      "commit",
+      "--allow-empty",
+      "-m",
+      "docs(changelog): add release notes through v0.0.33-nightly.20260809.1043000016",
+    );
+    const conflict = run({ T3CODE_RELEASE_SOURCE_SHA: git(root, "rev-parse", "HEAD") });
+    assert.notEqual(conflict.status, 0);
+    assert.match(conflict.stderr, /conflicts with the version recorded/u);
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 it("emits a fork-specific semver tag that electron-updater can match to nightly", () => {
   const fixtureRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-release-"));
 

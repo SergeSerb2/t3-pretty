@@ -4,29 +4,16 @@
  * The wash follows the chosen color scheme, as on desktop.
  */
 import { isBoringMobileTheme } from "../../../../lib/mobileTheme";
-import { BLUR_RANGE, TRANSLUCENCY_RANGE } from "../../../scenery/sceneryLogic";
+import { BLUR_RANGE } from "../../../scenery/sceneryLogic";
+import {
+  photoPresenceToTranslucency,
+  translucencyToPhotoPresence,
+} from "@t3tools/client-runtime/state/scenery-sync";
 import { useScenery } from "../../../scenery/SceneryProvider";
 import { SettingsSection } from "../../components/SettingsSection";
 import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 import { FontSizeSliderRow } from "../components/FontSizeSliderRow";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
-
-/** Slider scale for "how much photo shows through": 0% ⇔ translucency 1
- *  (fully covered), 100% ⇔ translucency 0.5 (the glass end). */
-function translucencyToPresence(translucency: number): number {
-  return Math.round(
-    ((TRANSLUCENCY_RANGE.upperBound - translucency) /
-      (TRANSLUCENCY_RANGE.upperBound - TRANSLUCENCY_RANGE.lowerBound)) *
-      100,
-  );
-}
-
-function presenceToTranslucency(presence: number): number {
-  return (
-    TRANSLUCENCY_RANGE.upperBound -
-    (presence / 100) * (TRANSLUCENCY_RANGE.upperBound - TRANSLUCENCY_RANGE.lowerBound)
-  );
-}
 
 export function SceneryAppearanceSection() {
   const { themeId } = useAppearancePreferences();
@@ -69,10 +56,10 @@ export function SceneryAppearanceSection() {
             label="Photo presence"
             max={100}
             min={0}
-            onChange={(value) => setTranslucency(presenceToTranslucency(value))}
+            onChange={(value) => setTranslucency(photoPresenceToTranslucency(value))}
             step={5}
-            value={translucencyToPresence(translucency)}
-            valueLabel={`${translucencyToPresence(translucency)}%`}
+            value={translucencyToPhotoPresence(translucency)}
+            valueLabel={`${translucencyToPhotoPresence(translucency)}%`}
           />
         </>
       ) : null}

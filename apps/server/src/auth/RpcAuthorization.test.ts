@@ -451,3 +451,45 @@ it.effect("denies manual cleanup before the handler without settings permission"
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );
+
+it.effect("denies public thread publishing before the handler without operate access", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.threadSharePublish> =>
+          tag !== WS_METHODS.threadSharePublish,
+      ),
+    );
+    let handled = 0;
+    const handler = group.toLayerHandler(WS_METHODS.threadSharePublish, () =>
+      Effect.sync(() => {
+        handled++;
+        return {
+          url: "https://host.test/share/test/token",
+          publishedAt: "2026-10-15T12:00:00.000Z",
+          messageCount: 2,
+        };
+      }),
+    );
+    const deniedClient = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handler, RpcAuthorization.layer([AuthOrchestrationReadScope]))),
+    );
+    expect(
+      (yield* deniedClient[WS_METHODS.threadSharePublish]({
+        threadId: ThreadId.make("thread"),
+        publicBaseUrl: "https://host.test",
+      }).pipe(Effect.flip))._tag,
+    ).toBe("EnvironmentAuthorizationError");
+    expect(handled).toBe(0);
+    const allowedClient = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handler, RpcAuthorization.layer([AuthOrchestrationOperateScope]))),
+    );
+    yield* allowedClient[WS_METHODS.threadSharePublish]({
+      threadId: ThreadId.make("thread"),
+      publicBaseUrl: "https://host.test",
+    });
+    expect(handled).toBe(1);
+  }).pipe(Effect.scoped),
+);

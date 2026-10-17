@@ -11,6 +11,7 @@ import { AsyncResult } from "effect/reactivity";
 import {
   buildLocalEnvironmentUpdateGroups,
   canOneClickUpdateProviderCandidate,
+  collectPromptedProviderUpdateCandidates,
   collectProviderUpdateCandidates,
   collectProviderUpdateOutcomeSnapshots,
   collectUpdatedProviderSnapshots,
@@ -30,6 +31,7 @@ import {
   localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
+  serverUpdatesProvidersAutomatically,
   shouldShowPrimaryProviderUpdateToast,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
@@ -578,6 +580,134 @@ describe("provider update launch notification logic", () => {
     });
   });
 
+  it("names the machine of a failed update when the pill covers several machines", () => {
+    const failed = provider({
+      driver: driver("claudeAgent"),
+      updateState: {
+        status: "failed",
+        startedAt: checkedAt,
+        finishedAt: checkedAt,
+        message: "Update command exited with code 1.",
+        output: null,
+      },
+    });
+    const current = provider({ driver: driver("claudeAgent"), advisoryStatus: "current" });
+
+    expect(
+      getProviderUpdateSidebarPillView(
+        [
+          { ...current, machineLabel: "MacBook" },
+          { ...failed, machineLabel: "m1-linux" },
+        ],
+        { visibleAfterIso: sessionStartedAt },
+      ),
+    ).toMatchObject({
+      key: "failed:m1-linux/claudeAgent:2026-04-23T10:00:00.000Z:Update command exited with code 1.",
+      tone: "error",
+      title: "Claude v1.1.0 update failed on m1-linux",
+    });
+  });
+
+  it("summarizes a success on several machines per provider, without a machine", () => {
+    const updated = provider({
+      driver: driver("codex"),
+      version: "1.1.0",
+      latestVersion: "1.1.0",
+      advisoryStatus: "current",
+      updateState: {
+        status: "succeeded",
+        startedAt: checkedAt,
+        finishedAt: checkedAt,
+        message: "Provider updated.",
+        output: null,
+      },
+    });
+    const view = (labels: ReadonlyArray<string>) =>
+      getProviderUpdateSidebarPillView(
+        labels.map((machineLabel) => ({ ...updated, machineLabel })),
+        { visibleAfterIso: sessionStartedAt },
+      );
+
+    expect(view(["MacBook", "m1-linux"])).toMatchObject({
+      key: "succeeded:codex:2026-04-23T10:00:00.000Z:Provider updated.",
+      title: "Codex updated: v1.1.0",
+    });
+    expect(view(["m1-linux", "MacBook"])?.key).toBe(view(["MacBook", "m1-linux"])?.key);
+  });
+
+  it("shows another machine's failure while an update runs elsewhere", () => {
+    const running = provider({
+      driver: driver("codex"),
+      updateState: {
+        status: "running",
+        startedAt: checkedAt,
+        finishedAt: null,
+        message: "Updating provider.",
+        output: null,
+      },
+    });
+    const failed = provider({
+      driver: driver("claudeAgent"),
+      updateState: {
+        status: "failed",
+        startedAt: checkedAt,
+        finishedAt: checkedAt,
+        message: "Update command exited with code 1.",
+        output: null,
+      },
+    });
+
+    const view = getProviderUpdateSidebarPillView(
+      [
+        { ...running, machineLabel: "MacBook" },
+        { ...failed, machineLabel: "m1-linux" },
+      ],
+      { visibleAfterIso: sessionStartedAt },
+    );
+    expect(view).toMatchObject({
+      tone: "error",
+      title: "Claude v1.1.0 update failed on m1-linux",
+    });
+    expect(
+      getProviderUpdateSidebarPillView(
+        [
+          { ...running, machineLabel: "MacBook" },
+          { ...failed, machineLabel: "m1-linux" },
+        ],
+        { visibleAfterIso: sessionStartedAt, dismissedKeys: new Set([view!.key]) },
+      ),
+    ).toMatchObject({ tone: "loading", title: "Updating Codex" });
+    // One machine keeps showing its run until it finishes.
+    expect(
+      getProviderUpdateSidebarPillView([running, failed], { visibleAfterIso: sessionStartedAt }),
+    ).toMatchObject({ tone: "loading" });
+  });
+
+  it("keeps an automatic update failure flagged across app sessions until it succeeds", () => {
+    const updateState = {
+      status: "failed" as const,
+      startedAt: checkedAt,
+      finishedAt: checkedAt,
+      message: "Update command exited with code 1. T3 Code will try again automatically.",
+      output: null,
+      automatic: true,
+    };
+    const laterSession = { visibleAfterIso: "2026-04-24T08:00:00.000Z" };
+
+    expect(
+      getProviderUpdateSidebarPillView(
+        [provider({ driver: driver("codex"), updateState })],
+        laterSession,
+      ),
+    ).toMatchObject({ tone: "error", title: "Codex v1.1.0 update failed" });
+    expect(
+      getProviderUpdateSidebarPillView(
+        [provider({ driver: driver("codex"), updateState: { ...updateState, automatic: false } })],
+        laterSession,
+      ),
+    ).toBeNull();
+  });
+
   it("does not show sidebar terminal states from before the current app session", () => {
     expect(
       getProviderUpdateSidebarPillView(
@@ -813,6 +943,26 @@ describe("provider update launch notification logic", () => {
       isPrimary: input.isPrimary ?? false,
       connectionState: input.connectionState ?? "ready",
       providers: input.providers,
+      ...(input.updatesAutomatically === undefined
+        ? {}
+        : { updatesAutomatically: input.updatesAutomatically }),
+    });
+
+    it("offers no one-click update for an environment that installs them itself", () => {
+      const { groups } = buildLocalEnvironmentUpdateGroups([
+        environment({
+          environmentId: "env-windows",
+          isPrimary: true,
+          updatesAutomatically: true,
+          providers: [provider({ driver: driver("codex") })],
+        }),
+        environment({
+          environmentId: "env-wsl",
+          providers: [provider({ driver: driver("codex") })],
+        }),
+      ]);
+
+      expect(groups.map((group) => group.candidates.length)).toEqual([0, 1]);
     });
 
     it("groups each environment's outdated one-click candidates", () => {
@@ -1165,5 +1315,49 @@ describe("getProviderUpdateRunToastView", () => {
         run("Server", "codex", AsyncResult.failure(Cause.interrupt())),
       ]),
     ).toBeNull();
+  });
+});
+
+describe("automatic provider updates", () => {
+  const config = (input: {
+    readonly supported: boolean;
+    readonly autoUpdateProviders: boolean;
+    readonly enableProviderUpdateChecks?: boolean;
+  }) => ({
+    environment: { capabilities: input.supported ? { providerAutoUpdate: true } : {} },
+    settings: {
+      autoUpdateProviders: input.autoUpdateProviders,
+      enableProviderUpdateChecks: input.enableProviderUpdateChecks ?? true,
+    },
+  });
+
+  it("trusts the setting only on servers that advertise automatic updates", () => {
+    expect(
+      serverUpdatesProvidersAutomatically(config({ supported: true, autoUpdateProviders: true })),
+    ).toBe(true);
+    // Older servers decode the setting's default without acting on it.
+    expect(
+      serverUpdatesProvidersAutomatically(config({ supported: false, autoUpdateProviders: true })),
+    ).toBe(false);
+    expect(
+      serverUpdatesProvidersAutomatically(
+        config({ supported: true, autoUpdateProviders: true, enableProviderUpdateChecks: false }),
+      ),
+    ).toBe(false);
+    expect(serverUpdatesProvidersAutomatically(null)).toBe(false);
+  });
+
+  it("prompts only for updates the server cannot install on its own", () => {
+    const providers = [
+      provider({ driver: driver("codex") }),
+      provider({ driver: driver("cursor"), canUpdate: false, updateCommand: null }),
+    ];
+
+    expect(
+      collectPromptedProviderUpdateCandidates(providers, true).map((entry) => entry.driver),
+    ).toEqual(["cursor"]);
+    expect(
+      collectPromptedProviderUpdateCandidates(providers, false).map((entry) => entry.driver),
+    ).toEqual(["codex", "cursor"]);
   });
 });

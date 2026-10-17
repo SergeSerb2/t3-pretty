@@ -354,6 +354,7 @@ function ThreadNavigationSidebarPane(
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
+    sharingEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
@@ -793,6 +794,7 @@ function ThreadNavigationSidebarPane(
               onRegenerateThreadTitle={regenerateThreadTitle}
               onRenameThread={props.onRenameThread}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              sharingSupported={sharingEnvironmentIds.has(thread.environmentId)}
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
@@ -902,6 +904,7 @@ function ThreadNavigationSidebarPane(
       providersByEnvironmentId,
       threadSearchMatchByKey,
       titleRegenerationEnvironmentIds,
+      sharingEnvironmentIds,
       settleThread,
       settlementEnvironmentIds,
       showMoreSettled,

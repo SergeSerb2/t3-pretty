@@ -23,6 +23,11 @@ photo from the theme that's on. Switching themes draws from that theme's pool.
 that appearance, or **System** to follow your device. A thread's photo never changes the
 scheme on its own: bright and dark landscapes both sit behind the appearance you chose.
 
+The photo theme, **Photo blur**, **Photo presence**, and desktop/web **Contrast** sync
+across connected environments. Devices that connect to the same environment use its saved
+values. Offline devices keep their last local values until they reconnect. Your device's
+accessibility settings still apply.
+
 While a photo theme is on:
 
 - A new thread opens in fog: a cloud bank gathers over the assigned place, the location

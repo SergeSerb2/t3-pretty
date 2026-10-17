@@ -26,9 +26,11 @@ import { AsyncResult } from "effect/reactivity";
 import { Platform } from "react-native";
 
 import {
+  resolveSharedSceneryAppearance,
   resolveSharedSceneryPhotoSet,
   shouldPublishLocalSceneryPhotoSet,
 } from "@t3tools/client-runtime/state/scenery-sync";
+import type { SceneryAppearance, ServerSettingsPatch } from "@t3tools/contracts/settings";
 import {
   filterSharedServerPatch,
   supportsSharedSettingsSync,
@@ -250,29 +252,20 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     (value: boolean) => persistScenery({ enabled: value }),
     [persistScenery],
   );
-  const setBlur = useCallback(
-    (value: number) => persistScenery({ blur: clampBlur(value) }),
-    [persistScenery],
-  );
-  const setTranslucency = useCallback(
-    (value: number) => persistScenery({ translucency: clampTranslucency(value) }),
-    [persistScenery],
-  );
   const { environments } = useEnvironments();
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
-    label: "scenery photo set sync",
+    label: "scenery settings sync",
     reportFailure: false,
   });
-  const publishPhotoSet = useCallback(
-    (nextPhotoSetId: PhotoSetId) => {
-      liftedSceneryPhotoSet = nextPhotoSetId;
+  const publishScenerySettings = useCallback(
+    (settingsPatch: ServerSettingsPatch) => {
       for (const environment of environments) {
         if (!supportsSharedSettingsSync(environment)) continue;
         const patch = filterSharedServerPatch(
-          { sceneryPhotoSet: nextPhotoSetId },
+          settingsPatch,
           environment.serverConfig?.environment.capabilities,
         );
-        if (patch.sceneryPhotoSet === undefined) continue;
+        if (Object.keys(patch).length === 0) continue;
         void updateSettings({
           environmentId: environment.environmentId,
           input: { patch },
@@ -281,6 +274,68 @@ export function SceneryProvider(props: { readonly children: ReactNode }) {
     },
     [environments, updateSettings],
   );
+  const lastSharedAppearance = useRef<SceneryAppearance | null>(null);
+  const publishPhotoSet = useCallback(
+    (nextPhotoSetId: PhotoSetId) => {
+      liftedSceneryPhotoSet = nextPhotoSetId;
+      publishScenerySettings({ sceneryPhotoSet: nextPhotoSetId });
+    },
+    [publishScenerySettings],
+  );
+  const setBlur = useCallback(
+    (value: number) => {
+      const blur = clampBlur(value);
+      persistScenery({ blur });
+      publishScenerySettings({ sceneryAppearance: { blur } });
+    },
+    [persistScenery, publishScenerySettings],
+  );
+  const setTranslucency = useCallback(
+    (value: number) => {
+      const translucency = clampTranslucency(value);
+      persistScenery({ translucency });
+      publishScenerySettings({ sceneryAppearance: { translucency } });
+    },
+    [persistScenery, publishScenerySettings],
+  );
+
+  useEffect(() => {
+    if (!isReady) return;
+    const shared = resolveSharedSceneryAppearance({
+      primaryEnvironmentId: null,
+      sources: environments.map((environment) => ({
+        environmentId: environment.environmentId,
+        syncEligible:
+          supportsSharedSettingsSync(environment) &&
+          environment.serverConfig?.environment.capabilities.sceneryAppearance === true,
+        sceneryAppearance: environment.serverConfig?.settings.sceneryAppearance,
+      })),
+    });
+    const local = sceneryRef.current;
+    const previous = lastSharedAppearance.current;
+    lastSharedAppearance.current = shared;
+    const patch: { blur?: number; translucency?: number } = {};
+    const migration: { blur?: number; translucency?: number } = {};
+    if (shared.blur !== undefined) {
+      if (shared.blur !== previous?.blur && shared.blur !== local.blur) patch.blur = shared.blur;
+    } else if (local.blur !== DEFAULT_BLUR) {
+      migration.blur = local.blur;
+    }
+    if (shared.translucency !== undefined) {
+      if (
+        shared.translucency !== previous?.translucency &&
+        shared.translucency !== local.translucency
+      ) {
+        patch.translucency = shared.translucency;
+      }
+    } else if (local.translucency !== DEFAULT_TRANSLUCENCY) {
+      migration.translucency = local.translucency;
+    }
+    if (Object.keys(patch).length > 0) persistScenery(patch);
+    if (Object.keys(migration).length > 0) {
+      publishScenerySettings({ sceneryAppearance: migration });
+    }
+  }, [environments, isReady, persistScenery, publishScenerySettings]);
 
   useEffect(() => {
     if (!isReady) return;

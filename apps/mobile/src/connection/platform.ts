@@ -30,6 +30,7 @@ import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
 import { mobileApplicationActiveWakeup } from "./app-state-wakeups";
+import { createNetworkPathTracker } from "./network-path-tracker";
 import { connectionStorageLayer } from "./storage";
 
 const MOBILE_NATIVE_OPERATION_TIMEOUT_MS = 10_000;
@@ -89,7 +90,7 @@ const connectivityLayer = Connectivity.layer({
           ])
             .then((current) => {
               const status = networkStatus(current);
-              if (active && status !== "offline") {
+              if (active && revisionAtStart === networkRevision && status !== "offline") {
                 Queue.offerUnsafe(queue, status);
               }
             })
@@ -128,20 +129,19 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
     Effect.sync(() => {
       let active = true;
-      let previous: Network.NetworkStateType | undefined;
+      const tracker = createNetworkPathTracker<Network.NetworkStateType>();
       const record = (state: Network.NetworkState) => {
         const type = state.isConnected === true ? state.type : undefined;
-        if (previous !== undefined && type !== undefined && type !== previous) {
+        if (tracker.record(type)) {
           Queue.offerUnsafe(queue, "network-changed");
         }
-        previous = type ?? previous;
       };
       // The listener reports changes only, so seed the current type; without
       // it the first Wi-Fi to cellular move would go unnoticed.
       void Network.getNetworkStateAsync()
         .then((state) => {
-          if (active && previous === undefined && state.isConnected === true) {
-            previous = state.type;
+          if (active) {
+            tracker.seed(state.isConnected === true ? state.type : undefined);
           }
         })
         .catch(() => undefined);
@@ -362,13 +362,9 @@ const environmentOwnedDataCleanupLayer = Layer.succeed(
           cleanupEnvironmentResource(environmentId, "composer drafts", () =>
             clearComposerDraftsEnvironment(environmentId),
           ),
-          cleanupEnvironmentResource(
-            environmentId,
-            "thread composer errors",
-            async () => {
-              clearThreadComposerErrorsForEnvironment(environmentId);
-            },
-          ),
+          cleanupEnvironmentResource(environmentId, "thread composer errors", async () => {
+            clearThreadComposerErrorsForEnvironment(environmentId);
+          }),
         ],
         { concurrency: "unbounded", discard: true },
       ),

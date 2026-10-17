@@ -211,9 +211,10 @@ folder to file it, or onto **All projects** / the ungrouped list to take it
 out. Drag a folder to move it among the other folders. Right-click the folder to
 change its icon, rename, reorder, or delete it; deleting a folder does not
 remove the projects.
-Folders, their icons, and which projects they hold are saved on the server and
-copied to connected environments that support shared settings, the same way
-settlement rules are.
+Folders, their icons, their contents, project grouping, sorting, and manual order sync across
+supported environments. Offline changes stay on your device and sync when you
+reconnect. If two devices change the layout, one complete layout wins, so folder
+order and contents stay together. Servers need a version that supports layout sync.
 
 Settling idle threads parks every active thread in that project that
 is not running, waiting, or holding an unseen response.
@@ -302,3 +303,18 @@ it appears in the active list; when the turn ends it returns to the shelf. Choos
 **Unstore thread** to bring it back to the top of the active list. Settling, snoozing,
 or pinning a stored thread also takes it out of storage. Storing requires an updated
 server in that environment.
+
+## Share a conversation
+
+Choose **Share publicly** from a thread’s menu on web, desktop, or mobile. Review
+the conversation for private information, then create a link. Anyone with the
+link can read the saved user and assistant text without an account. Tool output,
+reasoning, hidden instructions, attachments, and workspace files are excluded.
+
+Use the public URL of the environment that owns the thread, such as its tunnel
+address. The server must stay online and be reachable by the reader. A localhost
+or private network address does not make a conversation available on the internet.
+
+New messages stay private until you choose **Update snapshot**. Return to the same
+menu to copy the link or **Stop sharing**. Sharing again after stopping creates a
+new link. Deleting the thread also makes its shared snapshot unavailable.

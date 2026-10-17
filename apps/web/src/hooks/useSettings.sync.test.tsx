@@ -7,6 +7,7 @@ import {
   type AuthSessionState,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, type ClientSettingsPatch } from "@t3tools/contracts/settings";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { act } from "react";
@@ -22,11 +23,14 @@ const state = vi.hoisted(() => ({
     label: string;
     connection: { phase: "connected" | "disconnected" };
     serverConfig: {
-      environment: { capabilities: { threadAutoSettlement: boolean } };
+      environment: { capabilities: { threadAutoSettlement: boolean; sceneryAppearance?: boolean } };
       settings: typeof DEFAULT_SERVER_SETTINGS;
     };
   }>,
   persist: vi.fn(),
+  clientPersist: vi.fn(),
+  patch: { sidebarAutoSettleOnMerge: false } as ServerSettingsPatch & ClientSettingsPatch,
+  scoped: false,
   toast: vi.fn(),
 }));
 
@@ -54,8 +58,24 @@ vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => state.persist
 vi.mock("~/components/ui/toast", () => ({ toastManager: { add: state.toast } }));
 vi.mock("~/themePalette", () => ({}));
 vi.mock("./useTheme", () => ({}));
+vi.mock("../components/settings/SettingsScopeContext", () => ({
+  useSettingsScope: () => ({
+    scope: { kind: "environment", environmentIds: [primaryId], label: "Primary" },
+    environments: state.environments,
+  }),
+}));
+vi.mock("~/localApi", () => ({
+  ensureLocalApi: () => ({
+    persistence: { setClientSettings: state.clientPersist },
+  }),
+}));
 
-import { useUpdatePrimarySettings } from "./useSettings";
+import {
+  __setClientSettingsForTests,
+  getClientSettings,
+  useUpdatePrimarySettings,
+} from "./useSettings";
+import { useUpdateScopedSettings } from "../components/settings/useScopedSettings";
 
 const primaryId = EnvironmentId.make("primary");
 const remoteId = EnvironmentId.make("remote");
@@ -74,7 +94,12 @@ let renderer: ReactTestRenderer | undefined;
 
 function SettingsEditor() {
   const updateSettings = useUpdatePrimarySettings();
-  return <button onClick={() => updateSettings(patch)}>Save shared setting</button>;
+  const updateScopedSettings = useUpdateScopedSettings();
+  return (
+    <button onClick={() => (state.scoped ? updateScopedSettings : updateSettings)(state.patch)}>
+      Save shared setting
+    </button>
+  );
 }
 
 function saveSharedSettings() {
@@ -110,6 +135,10 @@ beforeEach(() => {
     },
   }));
   state.persist.mockReset();
+  state.clientPersist.mockReset().mockResolvedValue(undefined);
+  state.patch = patch;
+  state.scoped = false;
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   state.persist.mockResolvedValue(AsyncResult.success(DEFAULT_SERVER_SETTINGS));
   state.toast.mockReset();
 });
@@ -119,9 +148,53 @@ afterEach(async () => {
   renderer = undefined;
   state.registry?.dispose();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("shared settings writes", () => {
+  it("syncs the Appearance panel's contrast across machines even from a single-machine scope", async () => {
+    state.scoped = true;
+    state.patch = { appearanceContrast: 135 };
+    for (const environment of state.environments) {
+      environment.serverConfig.environment.capabilities.sceneryAppearance = true;
+    }
+    await mountEditor();
+    vi.useFakeTimers();
+    await act(async () => saveSharedSettings());
+    expect(getClientSettings().appearanceContrast).toBe(135);
+    expect(state.persist).not.toHaveBeenCalled();
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(state.persist.mock.calls).toEqual([
+      [{ environmentId: primaryId, input: { patch: { sceneryAppearance: { contrast: 135 } } } }],
+      [{ environmentId: remoteId, input: { patch: { sceneryAppearance: { contrast: 135 } } } }],
+    ]);
+  });
+
+  it.each([135, 100])(
+    "syncs contrast %s, including reset, and keeps the offline value",
+    async (contrast) => {
+      state.patch = { appearanceContrast: contrast };
+      for (const environment of state.environments) {
+        environment.serverConfig.environment.capabilities = {
+          threadAutoSettlement: true,
+          sceneryAppearance: true,
+        };
+      }
+      await mountEditor();
+      await act(async () => saveSharedSettings());
+      expect(state.persist.mock.calls).toEqual([
+        [{ environmentId: primaryId, input: { patch: { sceneryAppearance: { contrast } } } }],
+        [{ environmentId: remoteId, input: { patch: { sceneryAppearance: { contrast } } } }],
+      ]);
+      expect(getClientSettings().appearanceContrast).toBe(contrast);
+      expect(state.clientPersist).toHaveBeenCalledWith(
+        expect.objectContaining({ appearanceContrast: contrast }),
+      );
+    },
+  );
+
   it("waits for the remaining target before reporting a partial save", async () => {
     let finishRemote = () => {};
     const remote = new Promise((resolve) => {

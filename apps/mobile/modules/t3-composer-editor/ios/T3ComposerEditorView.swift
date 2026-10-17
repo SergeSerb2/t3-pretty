@@ -1185,14 +1185,24 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
 
   private func displayOffset(forSourceOffset sourceOffset: Int) -> Int {
     let boundedOffset = max(0, min((value as NSString).length, sourceOffset))
-    var collapsedLength = 0
-    for token in tokens where token.end <= boundedOffset {
-      collapsedLength += max(0, token.end - token.start - 1)
+    var sourceCursor = 0
+    var displayOffset = textView.attributedText.length
+    // Rendering rejects stale, invalid, and overlapping token ranges. Map only
+    // the attachments that actually rendered, as sourceOffset does in reverse.
+    textView.attributedText.enumerateAttribute(
+      .attachment,
+      in: NSRange(location: 0, length: textView.attributedText.length)
+    ) { value, range, stop in
+      let attachment = value as? ComposerTextAttachment
+      let sourceLength = attachment.map { ($0.source as NSString).length } ?? range.length
+      if boundedOffset <= sourceCursor + sourceLength {
+        let offset = boundedOffset - sourceCursor
+        displayOffset = range.location + (attachment == nil ? offset : min(1, offset))
+        stop.pointee = true
+      }
+      sourceCursor += sourceLength
     }
-    if let token = tokens.first(where: { $0.start < boundedOffset && boundedOffset < $0.end }) {
-      return token.start - collapsedLength + 1
-    }
-    return boundedOffset - collapsedLength
+    return displayOffset
   }
 
   private func applyRequestedSelection() {

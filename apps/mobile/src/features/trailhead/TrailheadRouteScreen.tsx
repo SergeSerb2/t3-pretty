@@ -11,6 +11,7 @@ import {
   settleAsyncResult,
   settlePromise,
 } from "@t3tools/client-runtime/state/runtime";
+import { CONNECT_BRANDING, forkCliCommand } from "@t3tools/shared/connectBranding";
 import * as Effect from "effect/Effect";
 import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
@@ -63,7 +64,8 @@ export function TrailheadRouteScreen() {
   const isFocused = useIsFocused();
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const environments = useWorkspaceEnvironments();
-  const firstEnvironment = environments[0] ?? null;
+  const firstEnvironment =
+    environments.find((environment) => environment.connectionState === "connected") ?? null;
   const hasConnections = firstEnvironment !== null;
   const cloudAvailable = hasCloudPublicConfig();
   const notifyAvailable = cloudAvailable && supportsAgentAwarenessPush();
@@ -215,7 +217,7 @@ export function TrailheadRouteScreen() {
           ) : (
             <View className="mt-4 self-start rounded-[10px] border border-border bg-foreground/5 px-3 py-2">
               <Text selectable className="font-mono text-sm text-foreground">
-                npx t3 pair
+                {forkCliCommand("pair")}
               </Text>
             </View>
           )}
@@ -247,7 +249,7 @@ export function TrailheadRouteScreen() {
             <MaterialButton
               fullWidth
               tone="text"
-              label="Sign in to T3 Connect"
+              label={`Sign in to ${CONNECT_BRANDING.connectName}`}
               onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
             />
           ) : null}

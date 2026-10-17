@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   mayPublishThreadScenery,
+  photoPresenceToTranslucency,
+  resolveSharedSceneryAppearance,
   resolveSharedSceneryPhotoSet,
   serverSceneryMatchesPhotoSet,
   shouldPublishLocalSceneryPhotoSet,
+  translucencyToPhotoPresence,
 } from "./scenerySync.ts";
 
 // Match Hermes: these ES2023 array methods are absent on mobile, and
@@ -21,6 +24,69 @@ beforeEach(() => {
       if (descriptor) Reflect.defineProperty(Array.prototype, method, descriptor);
     }
   };
+});
+
+describe("photo presence", () => {
+  it.each([0, 25, 70, 100])("round trips %s%% on desktop and mobile", (presence) => {
+    expect(translucencyToPhotoPresence(photoPresenceToTranslucency(presence))).toBe(presence);
+  });
+  it("matches the existing desktop slider direction and default", () => {
+    expect(translucencyToPhotoPresence(0.5)).toBe(0);
+    expect(translucencyToPhotoPresence(0.85)).toBe(70);
+    expect(translucencyToPhotoPresence(1)).toBe(100);
+  });
+});
+
+describe("resolveSharedSceneryAppearance", () => {
+  it("uses each published primary value, including zero, and fills only missing fields", () => {
+    expect(
+      resolveSharedSceneryAppearance({
+        primaryEnvironmentId: "primary",
+        sources: [
+          {
+            environmentId: "peer",
+            syncEligible: true,
+            sceneryAppearance: { blur: 90, translucency: 0.7, contrast: 135 },
+          },
+          {
+            environmentId: "primary",
+            syncEligible: true,
+            sceneryAppearance: { blur: 0, contrast: 100 },
+          },
+        ],
+      }),
+    ).toEqual({ blur: 0, translucency: 0.7, contrast: 100 });
+  });
+
+  it("uses the same connected peer order on mobile and hosted web without a primary", () => {
+    expect(
+      resolveSharedSceneryAppearance({
+        primaryEnvironmentId: null,
+        sources: [
+          { environmentId: "b", syncEligible: true, sceneryAppearance: { blur: 80 } },
+          { environmentId: "a", syncEligible: true, sceneryAppearance: { blur: 20 } },
+          {
+            environmentId: "offline",
+            syncEligible: false,
+            sceneryAppearance: { contrast: 150 },
+          },
+        ],
+      }),
+    ).toEqual({ blur: 20 });
+  });
+
+  it("leaves local settings alone until an eligible server publishes a value", () => {
+    expect(
+      resolveSharedSceneryAppearance({
+        primaryEnvironmentId: "offline",
+        sources: [
+          { environmentId: "offline", syncEligible: false, sceneryAppearance: { blur: 80 } },
+          { environmentId: "new", syncEligible: true, sceneryAppearance: null },
+          { environmentId: "old", syncEligible: true, sceneryAppearance: undefined },
+        ],
+      }),
+    ).toEqual({});
+  });
 });
 
 describe("resolveSharedSceneryPhotoSet", () => {

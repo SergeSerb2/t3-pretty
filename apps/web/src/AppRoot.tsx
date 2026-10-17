@@ -6,6 +6,7 @@ import { SurgeConnectMeshSync } from "./cloud/SurgeConnectMeshSync";
 import { useCloudUiEnabled } from "./cloud/clerkGate";
 import { ContextMenuHost } from "./components/ContextMenuHost";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
+import { SidebarProjectLayoutSync } from "./components/sidebar/SidebarProjectLayoutSync";
 import { isElectron } from "./env";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
@@ -20,6 +21,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
 
   return (
     <AppAtomRegistryProvider>
+      <SidebarProjectLayoutSync />
       {isElectron && cloudUiEnabled ? <SurgeConnectMeshSync /> : null}
       <RouterProvider router={router} />
       <ElectronBrowserHost />

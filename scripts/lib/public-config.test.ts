@@ -15,6 +15,122 @@ afterEach(() => {
 });
 
 describe("loadRepoEnv", () => {
+  const official = {
+    T3CODE_BUILD_FLAVOR: "public",
+    T3CODE_PUBLIC_RELEASE: "1",
+    T3CODE_CLERK_PUBLISHABLE_KEY: "pk_live_Y2xlcmsudDMuY29kZXMk",
+    T3CODE_CLERK_JWT_TEMPLATE: "t3-relay",
+    T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "hzxSgY2cH10sDU2r",
+    T3CODE_RELAY_URL: "https://relay.t3.codes",
+  };
+
+  it.each([".env", ".env.local"])(
+    "rejects resolved internal settings from %s in a release",
+    (file) => {
+      const repoRoot = makeTemporaryDirectory();
+      NodeFS.writeFileSync(
+        NodePath.join(repoRoot, ".env.example"),
+        Object.entries(official)
+          .filter(([key]) => key !== "T3CODE_PUBLIC_RELEASE")
+          .map(([key, value]) => `${key}=${value}`)
+          .join("\n"),
+      );
+      const contaminants = [
+        "T3CODE_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuc2VyZ2VzZXJiaW5lbmtvLmNvbSQ",
+        "VITE_T3CODE_RELAY_URL=https://relay.sergeserbinenko.com",
+        "EXPO_PUBLIC_CLERK_JWT_TEMPLATE=internal-relay",
+        "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=d8yyrphoxfUzOISR",
+        "T3CODE_CLERK_PASSKEY_RP_DOMAINS=clerk.sergeserbinenko.com",
+        "T3CODE_MOBILE_EAS_PROJECT_ID=1eb51d67-48c5-4100-8aa8-f5ac9e1ada65",
+        "T3CODE_MOBILE_UPDATE_URL=https://u.expo.dev/1eb51d67-48c5-4100-8aa8-f5ac9e1ada65",
+        "T3CODE_DESKTOP_UPDATE_FEED_URL=https://internal.example.test/latest/",
+        "T3CODE_DESKTOP_UPDATE_REPOSITORY=private-owner/internal-releases",
+      ];
+      for (const setting of contaminants) {
+        NodeFS.writeFileSync(NodePath.join(repoRoot, file), `${setting}\n`);
+        expect(() =>
+          loadRepoEnv({
+            baseEnv: { T3CODE_BUILD_FLAVOR: "public", T3CODE_PUBLIC_RELEASE: "1" },
+            repoRoot,
+          }),
+        ).toThrow(/Public release/u);
+      }
+    },
+  );
+
+  it.each([
+    "T3CODE_MOBILE_OTLP_TRACES_URL",
+    "T3CODE_MOBILE_OTLP_TRACES_DATASET",
+    "T3CODE_MOBILE_OTLP_TRACES_TOKEN",
+    "EXPO_PUBLIC_OTLP_TRACES_URL",
+    "EXPO_PUBLIC_OTLP_TRACES_DATASET",
+    "EXPO_PUBLIC_OTLP_TRACES_TOKEN",
+    "T3CODE_RELAY_CLIENT_OTLP_TRACES_URL",
+    "T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET",
+    "T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN",
+    "VITE_RELAY_OTLP_TRACES_URL",
+    "VITE_RELAY_OTLP_TRACES_DATASET",
+    "VITE_RELAY_OTLP_TRACES_TOKEN",
+  ])("rejects %s before it can enter a public bundle or Expo manifest", (key) => {
+    expect(() =>
+      loadRepoEnv({
+        baseEnv: { ...official, [key]: "fixture-private-tracing-setting" },
+        repoRoot: makeTemporaryDirectory(),
+      }),
+    ).toThrow(/Public release/u);
+  });
+
+  it("gates official snapshots even without an explicit release flag", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.mkdirSync(NodePath.join(repoRoot, ".t3-fork"));
+    NodeFS.writeFileSync(NodePath.join(repoRoot, ".t3-fork/public-release.json"), "{}");
+    expect(() => loadRepoEnv({ baseEnv: { T3CODE_BUILD_FLAVOR: "public" }, repoRoot })).toThrow(
+      /official T3 Connect/u,
+    );
+    expect(() =>
+      loadRepoEnv({
+        baseEnv: {
+          ...official,
+          T3CODE_BUILD_FLAVOR: "internal",
+          T3CODE_PUBLIC_RELEASE: "0",
+        },
+        repoRoot,
+      }),
+    ).toThrow(/official T3 Connect/u);
+    expect(loadRepoEnv({ baseEnv: official, repoRoot }).T3CODE_RELAY_URL).toBe(
+      "https://relay.t3.codes",
+    );
+  });
+
+  it("allows local native public builds without EAS and only explicitly selected public OTA projects", () => {
+    const repoRoot = makeTemporaryDirectory();
+    expect(
+      loadRepoEnv({ baseEnv: official, repoRoot }).T3CODE_MOBILE_EAS_PROJECT_ID,
+    ).toBeUndefined();
+    const project = "11111111-2222-4333-8444-555555555555";
+    expect(
+      loadRepoEnv({
+        baseEnv: {
+          ...official,
+          T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID: project,
+          T3CODE_MOBILE_EAS_PROJECT_ID: project,
+          T3CODE_MOBILE_UPDATE_URL: `https://u.expo.dev/${project}`,
+        },
+        repoRoot,
+      }).T3CODE_MOBILE_UPDATE_URL,
+    ).toBe(`https://u.expo.dev/${project}`);
+    expect(() =>
+      loadRepoEnv({
+        baseEnv: {
+          ...official,
+          T3CODE_PUBLIC_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65",
+          T3CODE_MOBILE_EAS_PROJECT_ID: "1eb51d67-48c5-4100-8aa8-f5ac9e1ada65",
+        },
+        repoRoot,
+      }),
+    ).toThrow(/distinct/u);
+  });
+
   it("does not project cloud configuration for an unconfigured clone", () => {
     const env = loadRepoEnv({ baseEnv: {}, repoRoot: makeTemporaryDirectory() });
 
@@ -213,6 +329,34 @@ describe("loadRepoEnv", () => {
 });
 
 describe("readReleaseTrainVersion", () => {
+  it.each(["snapshot", "explicit"])(
+    "uses the public release version instead of the retained nightly marker for %s builds",
+    (mode) => {
+      const repoRoot = makeTemporaryDirectory();
+      NodeFS.mkdirSync(NodePath.join(repoRoot, ".t3-fork"));
+      NodeFS.mkdirSync(NodePath.join(repoRoot, "apps/web"), { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(repoRoot, ".t3-fork/upstream-nightly"),
+        "v0.0.46-nightly.20261015.3176\n",
+      );
+      NodeFS.writeFileSync(
+        NodePath.join(repoRoot, "apps/web/package.json"),
+        JSON.stringify({ version: mode === "snapshot" ? "0.0.45" : "1.2.3" }),
+      );
+      if (mode === "snapshot") {
+        NodeFS.writeFileSync(
+          NodePath.join(repoRoot, ".t3-fork/public-release.json"),
+          JSON.stringify({ version: "1.2.3", originCommit: "a".repeat(40) }),
+        );
+      }
+      expect(
+        readReleaseTrainVersion(repoRoot, {
+          T3CODE_PUBLIC_RELEASE: mode === "explicit" ? "1" : "0",
+        }),
+      ).toBe("1.2.3");
+    },
+  );
+
   it("prefers the integrated upstream nightly version in fork checkouts", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.mkdirSync(NodePath.join(repoRoot, ".t3-fork"));

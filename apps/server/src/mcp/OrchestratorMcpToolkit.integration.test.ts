@@ -1,3 +1,4 @@
+import * as ThreadSharing from "../sharing/ThreadSharing.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
@@ -692,7 +693,9 @@ describe("orchestrator MCP toolkit", () => {
           );
           const layerTest = Layer.merge(
             layerOrchestratorToolkit,
-            McpHttpServer.layerThreadToolkit,
+            McpHttpServer.layerThreadToolkit.pipe(
+              Layer.provide(Layer.mock(ThreadSharing.ThreadSharing)({})),
+            ),
           ).pipe(
             Layer.provideMerge(McpServer.McpServer.layer),
             Layer.provideMerge(layerOrchestration),

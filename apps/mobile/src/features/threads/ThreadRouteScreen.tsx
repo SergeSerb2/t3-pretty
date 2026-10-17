@@ -306,6 +306,7 @@ function ThreadRouteContent(
   const {
     selectedThread,
     selectedThreadCreation,
+    selectedThreadDetailRef,
     selectedThreadProject,
     selectedEnvironmentConnection,
   } = useThreadSelection();
@@ -1082,6 +1083,7 @@ function ThreadRouteContent(
             visible={routeVisible}
             canOperateThread={canOperateThread}
             selectedThread={selectedThreadWithDraftSettings ?? selectedThread}
+            selectedThreadDetailRef={selectedThreadDetailRef}
             contentPresentation={contentPresentation}
             screenTone={connectionTone(routeConnectionState)}
             connectionError={routeConnectionError}

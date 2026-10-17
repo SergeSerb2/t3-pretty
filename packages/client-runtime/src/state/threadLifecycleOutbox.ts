@@ -22,13 +22,16 @@ import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import {
   EMPTY_THREAD_LIFECYCLE_PENDING,
+  THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES,
   type PendingThreadLifecycleEntry,
   type QueuedThreadLifecycleCommand,
   type ThreadLifecyclePendingByEnvironment,
-  threadLifecycleDomain,
-  threadLifecycleDomainBit,
 } from "./threadLifecycleOutboxModel.ts";
-import { ThreadLifecycleOutboxStore } from "./threadLifecycleOutboxStore.ts";
+import {
+  encodePendingEntries,
+  ThreadLifecycleOutboxPersistenceError,
+  ThreadLifecycleOutboxStore,
+} from "./threadLifecycleOutboxStore.ts";
 
 export {
   EMPTY_THREAD_LIFECYCLE_PENDING,
@@ -129,88 +132,20 @@ export function asQueuedThreadLifecycleCommand(
   }
 }
 
+// Lifecycle commands also change other lifecycle fields, and some read the
+// previous state (re-pinning preserves its slot). Replacing a command with its
+// reverse loses those effects, so replay the queued transitions in user order.
 export function coalescePendingThreadLifecycleEntries(
   existing: ReadonlyArray<PendingThreadLifecycleEntry>,
   next: PendingThreadLifecycleEntry,
 ): ReadonlyArray<PendingThreadLifecycleEntry> {
-  const nextDomain = threadLifecycleDomain(next.command.type);
-  const kept = existing.filter((entry) => {
-    if (entry.command.threadId !== next.command.threadId) {
-      return true;
-    }
-    if (threadLifecycleDomain(entry.command.type) === nextDomain) {
-      return false;
-    }
-    const domain = threadLifecycleDomain(entry.command.type);
-    // Settling unsnoozes and unpins on the server.
-    if (
-      next.command.type === "thread.settle" &&
-      (domain === "snooze" || domain === "pin" || domain === "pin-order")
-    ) {
-      return false;
-    }
-    // Pinning unsnoozes on the server. Unpin does not.
-    if (next.command.type === "thread.pin" && domain === "snooze") {
-      return false;
-    }
-    // Pin carries an optional slot; unpin clears it. Either replaces a parked reorder.
-    if (
-      (next.command.type === "thread.pin" || next.command.type === "thread.unpin") &&
-      domain === "pin-order"
-    ) {
-      return false;
-    }
-    return true;
-  });
-  return [...kept, next];
+  return [...existing, next];
 }
 
 export function coalescePendingThreadLifecycleEntryBatch(
   entries: ReadonlyArray<PendingThreadLifecycleEntry>,
 ): ReadonlyArray<PendingThreadLifecycleEntry> {
-  const seenDomains = new Map<PendingThreadLifecycleEntry["command"]["threadId"], number>();
-  const laterSettle = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
-  const laterPin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
-  const laterPromotePin = new Set<PendingThreadLifecycleEntry["command"]["threadId"]>();
-  const retainedReversed: PendingThreadLifecycleEntry[] = [];
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry === undefined) continue;
-    const threadId = entry.command.threadId;
-    // Even a settle superseded by a later unsettle already removed every
-    // earlier snooze when the commands were originally appended.
-    if (entry.command.type === "thread.settle") {
-      laterSettle.add(threadId);
-    }
-    if (entry.command.type === "thread.pin" || entry.command.type === "thread.unpin") {
-      laterPin.add(threadId);
-    }
-    if (entry.command.type === "thread.pin") {
-      laterPromotePin.add(threadId);
-    }
-    const domain = threadLifecycleDomain(entry.command.type);
-    const domainBit = threadLifecycleDomainBit(domain);
-    const seen = seenDomains.get(threadId) ?? 0;
-    if ((seen & domainBit) !== 0) {
-      continue;
-    }
-    if (
-      laterSettle.has(threadId) &&
-      (domain === "snooze" || domain === "pin" || domain === "pin-order")
-    ) {
-      continue;
-    }
-    if (laterPromotePin.has(threadId) && domain === "snooze") {
-      continue;
-    }
-    if (domain === "pin-order" && laterPin.has(threadId)) {
-      continue;
-    }
-    seenDomains.set(threadId, seen | domainBit);
-    retainedReversed.push(entry);
-  }
-  retainedReversed.reverse();
-  return retainedReversed;
+  return entries;
 }
 
 interface LifecycleThread {
@@ -284,6 +219,7 @@ function applyQueuedThreadLifecycleCommand<
         storedAt: null,
         pinnedAt: null,
         pinOrderKey: null,
+        activeOrderKey: null,
         updatedAt: queuedAt,
       };
     case "thread.unsettle":
@@ -411,7 +347,7 @@ export class ThreadLifecycleOutbox extends Context.Service<
     readonly enqueue: (
       environmentId: EnvironmentId,
       command: OrchestrationV2Command,
-    ) => Effect.Effect<boolean>;
+    ) => Effect.Effect<boolean, ThreadLifecycleOutboxPersistenceError>;
     readonly watchAndDrain: (supervisor: EnvironmentSupervisor["Service"]) => Effect.Effect<void>;
   }
 >()("@t3tools/client-runtime/state/threadLifecycleOutbox") {}
@@ -571,16 +507,30 @@ export const makeThreadLifecycleOutbox = Effect.fn("ThreadLifecycleOutbox.make")
       environmentId,
       Effect.gen(function* () {
         const canPersist = yield* ensureLoadedUnlocked(environmentId);
+        if (!canPersist) {
+          return yield* new ThreadLifecycleOutboxPersistenceError({
+            operation: "load",
+            message: "Could not read offline thread changes. Reconnect this environment and retry.",
+          });
+        }
         const current = entriesFor(yield* SubscriptionRef.get(pending), environmentId);
+        const full = () =>
+          new ThreadLifecycleOutboxPersistenceError({
+            operation: "save",
+            message:
+              "The offline thread queue is full. Reconnect this environment before retrying.",
+          });
+        if (current.length >= THREAD_LIFECYCLE_OUTBOX_MAX_ENTRIES) return yield* full();
         const next = coalescePendingThreadLifecycleEntries(current, {
           environmentId,
           queuedAt,
           command: queued,
         });
+        yield* encodePendingEntries(next).pipe(Effect.mapError(full));
+        // Admission is durable before it becomes visible or starts draining.
+        // A failed save must fail the command so its optimistic view rolls back.
+        yield* store.save(environmentId, next);
         yield* updateEntries(environmentId, next);
-        if (canPersist) {
-          yield* persist(environmentId, next);
-        }
       }),
     );
     return true;

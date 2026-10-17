@@ -24,7 +24,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type * as Exit from "effect/Exit";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -39,7 +39,6 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import { makeMuseAdapterV2, type MuseAdapterV2Options } from "./adapter.ts";
-import { museReplayEntryHost } from "./MuseAdapterV2.testkit.ts";
 
 const testLayer = Layer.mergeAll(
   NodeServices.layer,
@@ -352,14 +351,6 @@ const approval = (turnId: string) => ({
 });
 
 describe("MuseAdapterV2", () => {
-  it("closes the stamped Muse host on runtime_exit, not the newest host", () => {
-    assert.strictEqual(museReplayEntryHost({ type: "runtime_exit", status: "success" }), 1);
-    assert.strictEqual(
-      museReplayEntryHost({ type: "runtime_exit", status: "success", label: "runtime_exit@h2" }),
-      2,
-    );
-  });
-
   it.effect("connects the thread's MCP credential on native start and resume", () =>
     Effect.gen(function* () {
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
@@ -1017,6 +1008,471 @@ describe("MuseAdapterV2", () => {
       yield* fake.emit("turn/completed", { turnId: turn.nativeId, terminal: "cancelled" });
       yield* Fiber.join(interrupt);
       assert.strictEqual((yield* harness.takeEvent("turn.terminal")).status, "interrupted");
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("stops the Muse host and its workflow children with an active user Stop", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const turn = yield* startConversation(harness, fake);
+      yield* fake.emit("item/started", {
+        turnId: turn.nativeId,
+        item: {
+          itemId: "wf-stop-active",
+          kind: "workflow",
+          revision: 1,
+          status: "inProgress",
+          turnId: turn.nativeId,
+          children: [{ childId: "c1", attempt: 1, status: "started" }],
+        },
+      });
+      yield* harness.takeEvent("subagent.updated");
+      const stopping = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: turn.providerTurn.id,
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.forkScoped);
+      // An ordinary native interrupt can end the root while its workflow keeps running.
+      const interruptedRoot = yield* Effect.raceFirst(
+        fake.takeCall("turn/interrupt").pipe(Effect.as(true)),
+        Effect.promise(() => fake.host.exited).pipe(Effect.as(false)),
+      );
+      if (interruptedRoot)
+        yield* fake.emit("turn/completed", { turnId: turn.nativeId, terminal: "cancelled" });
+      yield* Fiber.join(stopping);
+      assert.strictEqual(fake.closeCount(), 1);
+      yield* Deferred.await(harness.eventsEnded);
+      const terminal = harness.allEvents.find((event) => event.type === "turn.terminal");
+      assert.strictEqual(terminal?.status, "interrupted");
+      assert.isTrue(
+        harness.allEvents.some(
+          (event) => event.type === "subagent.updated" && event.subagent.status === "interrupted",
+        ),
+      );
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("stops workflow children after their parent Muse turn has completed", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const turn = yield* startConversation(harness, fake);
+      yield* fake.emit("item/started", {
+        turnId: turn.nativeId,
+        item: {
+          itemId: "wf-stop-settled",
+          kind: "workflow",
+          revision: 1,
+          status: "inProgress",
+          turnId: turn.nativeId,
+          children: [{ childId: "c1", attempt: 1, status: "started" }],
+        },
+      });
+      yield* harness.takeEvent("subagent.updated");
+      yield* fake.emit("turn/completed", { turnId: turn.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      assert.isTrue(yield* harness.runtime.hasPendingBackgroundWork!);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: turn.providerTurn.id,
+        requestRuntimeRestart: true,
+      });
+      assert.strictEqual(fake.closeCount(), 1);
+      yield* Deferred.await(harness.eventsEnded);
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
+      assert.isTrue(
+        harness.allEvents.some(
+          (event) => event.type === "subagent.updated" && event.subagent.status === "interrupted",
+        ),
+      );
+      const providerThread = harness.allEvents.findLast(
+        (event) => event.type === "provider_thread.updated",
+      );
+      assert.deepStrictEqual(providerThread?.providerThread.pendingBackgroundTasks, []);
+      assert.strictEqual(
+        harness.allEvents.filter((event) => event.type === "turn.terminal").length,
+        1,
+      );
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("withdraws a held Muse report turn when the user stops its completed parent", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const offered =
+        yield* Queue.unbounded<ProviderContinuationRequests.ProviderContinuationRequest>();
+      const harness = yield* makeHarness(
+        fake,
+        INSTANCE_ID,
+        undefined,
+        undefined,
+        undefined,
+        runtimePolicy,
+        { continuationRequests: { offer: (request) => Queue.offer(offered, request) } },
+      );
+      const turn = yield* startConversation(harness, fake);
+      yield* fake.emit("turn/completed", { turnId: turn.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      yield* fake.emit("turn/started", { turnId: "report-after-stop" });
+      const report = yield* Queue.take(offered);
+      assert.isTrue(yield* harness.runtime.hasPendingBackgroundWork!);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: turn.providerTurn.id,
+        requestRuntimeRestart: true,
+      });
+      assert.strictEqual(fake.closeCount(), 1);
+      yield* Deferred.await(harness.eventsEnded);
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
+      assert.isTrue(Option.isNone(yield* report.dispatchIfCurrent!(Effect.succeed("run"))));
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("stops an older turn's workflow after a newer turn completed without work", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(fake);
+      const first = yield* startConversation(harness, fake, 1);
+      yield* fake.emit("item/started", {
+        turnId: first.nativeId,
+        item: {
+          itemId: "wf-carried-parent",
+          kind: "workflow",
+          revision: 1,
+          status: "inProgress",
+          turnId: first.nativeId,
+          children: [{ childId: "old-child", attempt: 1, status: "started" }],
+        },
+      });
+      yield* harness.takeEvent("subagent.updated");
+      yield* fake.emit("turn/completed", { turnId: first.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      const second = yield* startConversation(harness, fake, 2);
+      yield* fake.emit("turn/completed", { turnId: second.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: first.providerTurn.id,
+        requestRuntimeRestart: true,
+      });
+      assert.strictEqual(fake.closeCount(), 1);
+      yield* Deferred.await(harness.eventsEnded);
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
+      assert.isTrue(
+        harness.allEvents.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.providerTurnId === first.providerTurn.id &&
+            event.turnItem.status === "interrupted",
+        ),
+      );
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect.each(["running", "completed"] as const)(
+    "rejects a stale Stop after a newer %s turn started workflow children",
+    (status) =>
+      Effect.gen(function* () {
+        const fake = yield* makeFakeMuse();
+        const harness = yield* makeHarness(fake);
+        const first = yield* startConversation(harness, fake, 1);
+        yield* fake.emit("turn/completed", { turnId: first.nativeId, terminal: "completed" });
+        yield* harness.takeEvent("turn.terminal");
+        const second = yield* startConversation(harness, fake, 2);
+        yield* fake.emit("item/started", {
+          turnId: second.nativeId,
+          item: {
+            itemId: "wf-newer-parent",
+            kind: "workflow",
+            revision: 1,
+            status: "inProgress",
+            turnId: second.nativeId,
+            children: [{ childId: "new-child", attempt: 1, status: "started" }],
+          },
+        });
+        yield* harness.takeEvent("subagent.updated");
+        if (status === "completed") {
+          yield* fake.emit("turn/completed", { turnId: second.nativeId, terminal: "completed" });
+          yield* harness.takeEvent("turn.terminal");
+        }
+        const failure = yield* harness.runtime
+          .interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: first.providerTurn.id,
+            requestRuntimeRestart: true,
+          })
+          .pipe(Effect.flip);
+        assert.instanceOf(failure, ProviderAdapter.ProviderAdapterInterruptError);
+        assert.strictEqual(fake.closeCount(), 0);
+        assert.isTrue(yield* harness.runtime.hasPendingBackgroundWork!);
+      }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect.each([
+    { owner: "older", phase: "queued" },
+    { owner: "older", phase: "held" },
+    { owner: "newer", phase: "queued" },
+    { owner: "newer", phase: "held" },
+    { owner: "unknown", phase: "held" },
+  ] as const)("keeps $owner ownership on a $phase Muse background report", ({ owner, phase }) =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakeMuse();
+      const offered =
+        yield* Queue.unbounded<ProviderContinuationRequests.ProviderContinuationRequest>();
+      const harness = yield* makeHarness(
+        fake,
+        INSTANCE_ID,
+        undefined,
+        undefined,
+        undefined,
+        runtimePolicy,
+        {
+          continuationRequests: { offer: (request) => Queue.offer(offered, request) },
+        },
+      );
+      const first = yield* startConversation(harness, fake, 1);
+      const startWork = (nativeId: string) =>
+        fake.emit("item/started", {
+          turnId: nativeId,
+          item: {
+            itemId: "report-workflow",
+            kind: "workflow",
+            revision: 1,
+            status: "inProgress",
+            turnId: nativeId,
+            children: [{ childId: "report-child", attempt: 1, status: "started" }],
+          },
+        });
+      if (owner === "older") {
+        yield* startWork(first.nativeId);
+        yield* harness.takeEvent("subagent.updated");
+      }
+      yield* fake.emit("turn/completed", { turnId: first.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      const second = yield* startConversation(harness, fake, 2);
+      if (owner === "newer") {
+        yield* startWork(second.nativeId);
+        yield* harness.takeEvent("subagent.updated");
+      }
+      yield* fake.emit("turn/completed", { turnId: second.nativeId, terminal: "completed" });
+      yield* harness.takeEvent("turn.terminal");
+      if (owner !== "unknown") {
+        const nativeId = owner === "older" ? first.nativeId : second.nativeId;
+        yield* fake.emit("item/completed", {
+          turnId: nativeId,
+          item: {
+            itemId: "report-workflow",
+            kind: "workflow",
+            revision: 2,
+            status: "completed",
+            turnId: nativeId,
+            children: [
+              { childId: "report-child", attempt: 1, status: "completed", terminal: "completed" },
+            ],
+          },
+        });
+        yield* harness.takeEvent(
+          "turn_item.updated",
+          (event) =>
+            event.turnItem.type === "dynamic_tool" && event.turnItem.status === "completed",
+        );
+      }
+      let report: ProviderContinuationRequests.ProviderContinuationRequest | undefined;
+      if (phase === "held") {
+        yield* fake.emit("turn/started", { turnId: "held-owned-report" });
+        report = yield* Queue.take(offered);
+      }
+      const stopped = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: first.providerTurn.id,
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.exit);
+      if (owner === "older") {
+        assert.isTrue(Exit.isSuccess(stopped));
+        assert.strictEqual(fake.closeCount(), 1);
+        if (report)
+          assert.isTrue(Option.isNone(yield* report.dispatchIfCurrent!(Effect.succeed("run"))));
+      } else {
+        assert.isTrue(Exit.isFailure(stopped));
+        assert.strictEqual(fake.closeCount(), 0);
+        if (report)
+          assert.isTrue(Option.isSome(yield* report.dispatchIfCurrent!(Effect.succeed("run"))));
+        yield* harness.runtime.interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: second.providerTurn.id,
+          requestRuntimeRestart: true,
+        });
+        assert.strictEqual(fake.closeCount(), 1);
+      }
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect.each(["known", "unknown"] as const)(
+    "keeps $0 ownership when a child's pending approval is updated after its workflow ended",
+    (ownership) =>
+      Effect.gen(function* () {
+        const fake = yield* makeFakeMuse();
+        const policy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          ...runtimePolicy,
+          runtimeMode: "approval-required",
+        });
+        const harness = yield* makeHarness(
+          fake,
+          INSTANCE_ID,
+          undefined,
+          undefined,
+          undefined,
+          policy,
+        );
+        const first = yield* startConversation(harness, fake, 1);
+        if (ownership === "known") {
+          yield* fake.emit("item/started", {
+            turnId: first.nativeId,
+            item: {
+              itemId: "approval-workflow",
+              kind: "workflow",
+              revision: 1,
+              status: "inProgress",
+              turnId: first.nativeId,
+              children: [{ childId: "approval-child", attempt: 1, status: "started" }],
+            },
+          });
+          yield* harness.takeEvent("subagent.updated");
+        }
+        const childApproval = {
+          ...approval("child-run"),
+          subagentOrigin: { subagentId: "approval-child" },
+        };
+        yield* fake.emit("approval/requested", childApproval);
+        yield* harness.takeEvent("runtime_request.updated");
+        yield* fake.emit("turn/completed", { turnId: first.nativeId, terminal: "completed" });
+        yield* harness.takeEvent("turn.terminal");
+        if (ownership === "known") {
+          yield* fake.emit("item/completed", {
+            turnId: first.nativeId,
+            item: {
+              itemId: "approval-workflow",
+              kind: "workflow",
+              revision: 2,
+              status: "completed",
+              turnId: first.nativeId,
+              children: [
+                {
+                  childId: "approval-child",
+                  attempt: 1,
+                  status: "completed",
+                  terminal: "completed",
+                },
+              ],
+            },
+          });
+          yield* harness.takeEvent(
+            "turn_item.updated",
+            (event) =>
+              event.turnItem.type === "dynamic_tool" && event.turnItem.status === "completed",
+          );
+        }
+        const second = yield* startConversation(harness, fake, 2);
+        yield* fake.emit("turn/completed", { turnId: second.nativeId, terminal: "completed" });
+        yield* harness.takeEvent("turn.terminal");
+        yield* fake.emit("approval/updated", childApproval);
+        yield* harness.takeEvent("runtime_request.updated");
+        const stopped = yield* harness.runtime
+          .interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: first.providerTurn.id,
+            requestRuntimeRestart: true,
+          })
+          .pipe(Effect.exit);
+        if (ownership === "known") assert.isTrue(Exit.isSuccess(stopped));
+        else {
+          assert.isTrue(Exit.isFailure(stopped));
+          assert.strictEqual(fake.closeCount(), 0);
+          yield* harness.runtime.interruptTurn({
+            providerThread: harness.providerThread,
+            providerTurnId: second.providerTurn.id,
+            requestRuntimeRestart: true,
+          });
+        }
+        assert.strictEqual(fake.closeCount(), 1);
+        yield* Deferred.await(harness.eventsEnded);
+        const finalRequest = harness.allEvents.findLast(
+          (event) => event.type === "runtime_request.updated",
+        );
+        assert.strictEqual(finalRequest?.runtimeRequest.status, "cancelled");
+      }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("stops workflow children when their parent completes while Stop waits", () =>
+    Effect.gen(function* () {
+      const completing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const fake = yield* makeFakeMuse();
+      const harness = yield* makeHarness(
+        fake,
+        INSTANCE_ID,
+        undefined,
+        undefined,
+        undefined,
+        runtimePolicy,
+        {
+          nativeEventLogger: {
+            filePath: "/tmp/muse-stop-race",
+            close: () => Effect.void,
+            write: (event) =>
+              (event as { method?: string }).method === "turn/completed"
+                ? Deferred.succeed(completing, undefined).pipe(
+                    Effect.andThen(Deferred.await(release)),
+                    Effect.asVoid,
+                  )
+                : Effect.void,
+          },
+        },
+      );
+      const turn = yield* startConversation(harness, fake);
+      yield* fake.emit("item/started", {
+        turnId: turn.nativeId,
+        item: {
+          itemId: "wf-completion-race",
+          kind: "workflow",
+          revision: 1,
+          status: "inProgress",
+          turnId: turn.nativeId,
+          children: [{ childId: "child", attempt: 1, status: "started" }],
+        },
+      });
+      yield* harness.takeEvent("subagent.updated");
+      yield* fake.emit("turn/completed", { turnId: turn.nativeId, terminal: "completed" });
+      yield* Deferred.await(completing);
+      const stopping = yield* harness.runtime
+        .interruptTurn({
+          providerThread: harness.providerThread,
+          providerTurnId: turn.providerTurn.id,
+          requestRuntimeRestart: true,
+        })
+        .pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(stopping);
+      yield* harness.takeEvent("turn.terminal");
+      assert.strictEqual(fake.closeCount(), 1);
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
+      yield* harness.runtime.interruptTurn({
+        providerThread: harness.providerThread,
+        providerTurnId: turn.providerTurn.id,
+        requestRuntimeRestart: true,
+      });
+      assert.strictEqual(fake.closeCount(), 1);
+      assert.strictEqual(
+        harness.allEvents.filter((event) => event.type === "turn.terminal").length,
+        1,
+      );
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );
 

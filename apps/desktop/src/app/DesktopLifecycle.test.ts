@@ -282,7 +282,7 @@ describe("DesktopLifecycle", () => {
     },
   );
 
-  it.effect("destroys windows before waiting for backend shutdown", () =>
+  it.effect("keeps repeated quit requests blocked until backend shutdown completes", () =>
     Effect.gen(function* () {
       const appListeners = new Map<string, (...args: readonly unknown[]) => void>();
       const shutdownRequested = yield* Deferred.make<void>();
@@ -349,9 +349,17 @@ describe("DesktopLifecycle", () => {
           yield* Deferred.await(quitRequested);
 
           assert.isTrue(firstPrevented);
-          assert.isFalse(secondPrevented);
+          assert.isTrue(secondPrevented);
           assert.deepEqual(eventsBeforeCleanup, ["flush", "destroy", "request"]);
           assert.deepEqual(events, ["flush", "destroy", "request", "quit"]);
+
+          let finalPrevented = false;
+          appListeners.get("before-quit")?.({
+            preventDefault: () => {
+              finalPrevented = true;
+            },
+          } as Electron.Event);
+          assert.isFalse(finalPrevented);
         }),
       ).pipe(Effect.provide(layer));
     }),

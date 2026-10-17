@@ -122,6 +122,38 @@ describe("flattenNestedThreads", () => {
       ["elsewhere", null],
     ]);
   });
+
+  it("keeps Working rows distinct when environments share thread ids", () => {
+    const local = { ...other, environmentId: "local", title: "Local work" };
+    const remote = { ...other, environmentId: "remote", title: "Remote work" };
+    const items = flattenNestedThreads({
+      threads: [local, remote],
+      section: "working",
+      projectKeyOf: (entry) => `${entry.environmentId}:${entry.project}`,
+      isPrNestExpanded: () => true,
+      activeThreadKey: null,
+      threadKeyOf: (entry) => `${entry.environmentId}:${entry.id}`,
+    });
+
+    expect(items.map((item) => item.thread)).toEqual([local, remote]);
+  });
+
+  it("does not hide another environment's row when its id matches a nested child", () => {
+    const localMain = { ...main, environmentId: "local" };
+    const localReview = { ...review, environmentId: "local" };
+    const remote = { ...other, id: review.id, environmentId: "remote" };
+    const items = flattenNestedThreads({
+      threads: [localMain, localReview, remote],
+      section: "working",
+      projectKeyOf: (entry) => `${entry.environmentId}:${entry.project}`,
+      isPrNestExpanded: () => false,
+      activeThreadKey: null,
+      threadKeyOf: (entry) => `${entry.environmentId}:${entry.id}`,
+    });
+
+    expect(items.map((item) => item.thread)).toEqual([localMain, remote]);
+    expect(items[0]?.childKeys).toEqual(["local:review"]);
+  });
 });
 
 describe("prNestExpansionKey", () => {

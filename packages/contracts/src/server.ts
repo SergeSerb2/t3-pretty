@@ -280,6 +280,8 @@ export const ServerProviderUpdateState = Schema.Struct({
   finishedAt: Schema.NullOr(ServerProviderTimestamp),
   message: Schema.NullOr(ServerProviderText),
   output: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
+  /** Set on an automatic update's failure, which stays flagged until a later attempt succeeds. */
+  automatic: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 

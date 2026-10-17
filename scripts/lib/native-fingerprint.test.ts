@@ -9,11 +9,11 @@ const fixture = NodeURL.fileURLToPath(
 );
 const repoRoot = NodeURL.fileURLToPath(new URL("../..", import.meta.url));
 
-function probe(mode: string) {
+function probe(mode: string, timeout = 10_000) {
   return NodeChildProcess.execFileSync(
     process.execPath,
     ["--no-global-search-paths", fixture, repoRoot, mode],
-    { encoding: "utf8", timeout: 10_000 },
+    { encoding: "utf8", timeout },
   ).trim();
 }
 
@@ -27,4 +27,8 @@ it("preserves the compiler receiver, return value, and every argument", () => {
 
 it("loads the native file and app major-version fingerprint configuration", () => {
   assert.equal(probe("configuration"), "native fingerprint configuration loaded");
+});
+
+it("hashes local native sources with external Gradle plugins without hashing build outputs or other platforms", () => {
+  assert.equal(probe("native-sources", 45_000), "native sources and platform boundaries preserved");
 });

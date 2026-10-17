@@ -266,6 +266,8 @@ function accumulateOpenCodeStepUsage(
 }
 
 interface ActiveOpenCodeTurn {
+  /** Immutable ancestor ownership, including the turn before a child session is reused. */
+  readonly ownership: ReadonlyMap<string, string>;
   readonly usage: OpenCodeTurnTokenUsageAccumulator;
   readonly isRoot: boolean;
   readonly threadId: ThreadId;
@@ -1017,6 +1019,26 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         // to the root thread state whose active turn owns the request; asks
         // arriving before the relation is known resolve it via session.get.
         const relatedSessionOwners = new Map<string, OpenCodeThreadState>();
+        const stoppingThreads = new Map<string, Deferred.Deferred<void>>();
+        const withThreadStop =
+          (sessionId: string) =>
+          <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+            Effect.suspend(() => {
+              const previous = stoppingThreads.get(sessionId);
+              if (previous)
+                return Deferred.await(previous).pipe(
+                  Effect.andThen(withThreadStop(sessionId)(effect)),
+                );
+              const done = Deferred.makeUnsafe<void>();
+              stoppingThreads.set(sessionId, done);
+              return effect.pipe(
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    stoppingThreads.delete(sessionId);
+                  }).pipe(Effect.andThen(Deferred.succeed(done, undefined))),
+                ),
+              );
+            });
         // Sessions of this runtime that OpenCode reports busy. A background
         // task child keeps running after its parent turn settles, so idle
         // release must not close the server under it.
@@ -1110,6 +1132,65 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               });
             const failure = yield* visit(rootId, false);
             if (failure) return yield* Effect.fail(failure);
+          }).pipe(Effect.timeout("15 seconds"));
+
+        // Older Stop targets are valid for carried background work. Enumerate
+        // before aborting, so an unknown or shared child fails without stopping
+        // work owned by a later turn. The latest target keeps full cleanup.
+        const abortOwnedDescendants = (
+          state: OpenCodeThreadState,
+          target: OrchestrationV2ProviderTurn,
+        ) =>
+          Effect.gen(function* () {
+            const visited = new Set([state.nativeSessionId]);
+            const children: string[] = [];
+            const collect = (
+              sessionId: string,
+            ): Effect.Effect<void, OpenCodeRuntime.OpenCodeRuntimeError> =>
+              Effect.gen(function* () {
+                const response = yield* sdkCall(
+                  "session.children",
+                  { sessionID: sessionId },
+                  (signal) => client.session.children({ sessionID: sessionId }, { signal }),
+                ).pipe(Effect.catchIf(isOpenCodeNotFound, () => Effect.succeed(undefined)));
+                for (const child of response?.data ?? []) {
+                  if (visited.has(child.id)) continue;
+                  visited.add(child.id);
+                  children.push(child.id);
+                  yield* collect(child.id);
+                }
+              });
+            yield* collect(state.nativeSessionId);
+            const turnsByChild = new Map<string, Array<OrchestrationV2ProviderTurn | undefined>>();
+            for (const context of subagentsByNativeItemId.values()) {
+              if (context.childSessionId === null) continue;
+              const id = context.parentTurn.ownership.get(target.providerThreadId);
+              const owners = turnsByChild.get(context.childSessionId) ?? [];
+              owners.push(id === undefined ? undefined : state.providerTurns.get(id));
+              turnsByChild.set(context.childSessionId, owners);
+            }
+            const selected: string[] = [];
+            for (const childId of children) {
+              const owners = turnsByChild.get(childId) ?? [];
+              if (owners.length === 0 || owners.some((owner) => owner === undefined))
+                return yield* protocolError(
+                  "Cannot stop older OpenCode work with an unknown child owner",
+                );
+              const included = owners.map((owner) => owner!.ordinal <= target.ordinal);
+              if (included.some(Boolean) && !included.every(Boolean))
+                return yield* protocolError(
+                  "Cannot stop older OpenCode work in a child shared with a newer turn",
+                );
+              if (included.every(Boolean)) selected.push(childId);
+            }
+            yield* Effect.forEach(
+              selected,
+              (sessionId) =>
+                sdkCall("session.abort", { sessionID: sessionId }, (signal) =>
+                  client.session.abort({ sessionID: sessionId }, { signal }),
+                ).pipe(Effect.catchIf(isOpenCodeNotFound, () => Effect.void)),
+              { concurrency: 8, discard: true },
+            );
           }).pipe(Effect.timeout("15 seconds"));
 
         const updateProviderSession = (
@@ -2249,6 +2330,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             completedAt: null,
           };
           const turn: ActiveOpenCodeTurn = {
+            ownership: new Map(state.parentSubagent.parentTurn.ownership).set(
+              providerTurn.providerThreadId,
+              providerTurn.id,
+            ),
             isRoot: false,
             threadId: state.appThread.id,
             runId: null,
@@ -3168,6 +3253,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 completedAt: null,
               };
               const admissionMessageId = yield* makeOpenCodeMessageId(messageIdClock);
+              while (stoppingThreads.has(sessionId))
+                yield* Deferred.await(stoppingThreads.get(sessionId)!);
               // No Effect may be yielded between this check and installing the
               // turn. If the event stream ended while IDs were being prepared,
               // registering afterward would leave a running turn that the EOF
@@ -3183,6 +3270,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 );
               }
               const turn: ActiveOpenCodeTurn = {
+                ownership: new Map([[providerTurn.providerThreadId, providerTurnId]]),
                 isRoot: true,
                 threadId: turnInput.threadId,
                 runId: turnInput.runId,
@@ -3421,6 +3509,21 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const sessionId = nativeThreadId(interruptInput.providerThread);
               const state = threads.get(sessionId);
               const turn = state?.activeTurn;
+              const target = state?.providerTurns.get(interruptInput.providerTurnId);
+              if (
+                interruptInput.requestRuntimeRestart === true &&
+                (turn?.providerTurnId ??
+                  (state === undefined
+                    ? undefined
+                    : [...state.providerTurns.values()].at(-1)?.id)) !==
+                  interruptInput.providerTurnId
+              ) {
+                if (state === undefined || target === undefined)
+                  return yield* protocolError(
+                    `OpenCode turn ${interruptInput.providerTurnId} is not known`,
+                  );
+                return yield* abortOwnedDescendants(state, target);
+              }
               // Stop on a settled turn: a background task child can outlive
               // it (busySessionIds), and aborting the descendants ends it.
               if (
@@ -3476,6 +3579,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               // even if the root has already emitted its terminal event.
               yield* abortDescendants(sessionId);
             }).pipe(
+              withThreadStop(
+                interruptInput.providerThread.nativeThreadRef?.nativeId ??
+                  String(interruptInput.providerThread.id),
+              ),
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterInterruptError({

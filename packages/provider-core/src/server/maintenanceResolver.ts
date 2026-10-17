@@ -767,8 +767,10 @@ const fetchNpmLatestVersion = Effect.fn("fetchNpmLatestVersion")(function* (pack
   return payload ? nonEmptyString(payload.version) : null;
 });
 
+/** `fresh` skips the cached registry answer, for a caller that must see a release promptly. */
 export const resolveLatestProviderVersion = Effect.fn("resolveLatestProviderVersion")(function* (
   maintenanceCapabilities: ProviderMaintenanceCapabilities,
+  options?: { readonly fresh?: boolean },
 ) {
   if (maintenanceCapabilities.latestVersion !== undefined) {
     return maintenanceCapabilities.latestVersion;
@@ -779,7 +781,7 @@ export const resolveLatestProviderVersion = Effect.fn("resolveLatestProviderVers
   }
 
   const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
-  return yield* latestVersions.cached(packageName, fetchNpmLatestVersion(packageName));
+  return yield* latestVersions.cached(packageName, fetchNpmLatestVersion(packageName), options);
 });
 
 export const enrichProviderSnapshotWithVersionAdvisory = Effect.fn(

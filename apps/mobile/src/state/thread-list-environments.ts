@@ -21,6 +21,7 @@ const capabilityKeys = [
   "threadPinReorder",
   "threadActiveReorder",
   "threadTitleRegeneration",
+  "threadSharing",
 ] as const;
 
 function selectEnvironment(config: ServerConfig) {
@@ -71,6 +72,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
   const pinReorderEnvironmentIds = new Set<EnvironmentId>();
   const activeReorderEnvironmentIds = new Set<EnvironmentId>();
   const titleRegenerationEnvironmentIds = new Set<EnvironmentId>();
+  const sharingEnvironmentIds = new Set<EnvironmentId>();
   for (const [id, { providers, machineKind, capabilities }] of environments) {
     providersByEnvironmentId.set(id, providers);
     machineByEnvironmentId.set(id, machineKind);
@@ -82,6 +84,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     if (capabilities.threadPinReorder === true) pinReorderEnvironmentIds.add(id);
     if (capabilities.threadActiveReorder === true) activeReorderEnvironmentIds.add(id);
     if (capabilities.threadTitleRegeneration === true) titleRegenerationEnvironmentIds.add(id);
+    if (capabilities.threadSharing === true) sharingEnvironmentIds.add(id);
   }
   return {
     providersByEnvironmentId,
@@ -94,6 +97,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
+    sharingEnvironmentIds,
   };
 }
 

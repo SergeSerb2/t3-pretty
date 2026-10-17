@@ -261,6 +261,22 @@ function failureMessage(result: ProviderMaintenanceCommandResult): string {
   return "Update command failed.";
 }
 
+/** Whether the model manifest forbids moving this driver to `version`. */
+export function isBlockedProviderVersion(
+  manifest: ModelManifest.ModelManifestData,
+  provider: ProviderDriverKind,
+  version: string | null,
+): boolean {
+  const advisory =
+    resolveProviderCompatibility(manifest.compatibility, provider, version) ??
+    resolveProviderCompatibility(
+      ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+      provider,
+      version,
+    );
+  return advisory?.status === "broken" || advisory?.status === "unsupported";
+}
+
 function isOutdatedProvider(provider: ServerProvider | undefined): boolean {
   return provider?.versionAdvisory?.status === "behind_latest";
 }

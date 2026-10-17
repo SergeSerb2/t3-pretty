@@ -136,6 +136,12 @@ still come from GitHub (`pingdotgg/t3code`); that is someone else's repository.
    starts its own `T3 Pretty Desktop Release`. Release runs are not collapsed through a workflow
    concurrency group: the dedicated runners queue every main commit, and the CI run number
    makes each fork version unique even when multiple releases overlap.
+   For coordinated local builds, mint the version once and pass both
+   `T3CODE_RELEASE_VERSION` and `T3CODE_RELEASE_SOURCE_SHA` to every platform.
+   The source must be the full SHA checked out by each builder. This keeps later
+   platforms on the same version after the first platform publishes its tag.
+   A source mismatch, a conflicting changelog version, or a version below the
+   published feed floor fails the build.
 7. Native macOS and Windows packagers run `scripts/fork/generate-changelog.mjs` after minting
    the fork version and before compiling, so What's New notes land in the artifact users
    install. The script lists non-merge commit subjects (Origin merge commits are
@@ -231,8 +237,8 @@ without pretending that a newer upstream tag was integrated before its sync pull
   orchestration),
   `macos-large` (hosted M4 12 vCPU: signed DMG, iOS),
   `macos-release` (self-hosted: Origin PR review, comments, GHA importer,
-  upstream sync, GitHub mirror, and relay — these need `CURSOR_API_KEY`,
-  the origin CLI, `GITHUB_MIRROR_SSH_KEY`, `PLANETSCALE_*`, and/or a
+  upstream sync and relay — these need `CURSOR_API_KEY`,
+  the origin CLI, `PLANETSCALE_*`, and/or a
   matching Go toolchain that hosted M4 does not have today), and
   `windows-release` (serge-pc).
   The default Buildkite upload step is `macos-medium` (pipeline
@@ -322,7 +328,6 @@ Measured from recent successful runs on the current two runners (2026-08-16):
 | Updater-feed upload (R2/S3) | m1-dev                                | 5 min (3 min just to install Vite+)         | hosted `macos-large` DMG (`origin-forge upload-assets` is S3, not Origin CLI) |
 | Mobile OTA + TestFlight     | m1-dev (imported GHA died in ~2s)     | OTA a few minutes; IPA ~13 min when native  | `windows-release` (`publish-mobile-release.sh`)                               |
 | Relay production deploy     | m1-dev                                | queued behind releases                      | self-hosted `macos-release` (`deploy-relay-ci.sh`)                            |
-| GitHub mirror               | m1-dev                                | seconds                                     | self-hosted `macos-release` (`mirror-github.sh`)                              |
 
 A desktop release that used to sit 25–40 minutes in the m1-dev queue and then take ~30 minutes of Mac occupancy should now occupy a hosted M4 only for the signed DMG and iOS jobs. Changelog, WSL, and Linux publish stay on `linux-small`.
 
@@ -333,9 +338,9 @@ pipeline upload use `macos-medium`. Apple signing does not use the
 self-hosted login keychain: `build-macos-dmg.sh` imports `CSC_LINK` into
 a per-job temp keychain and notarizes with `APPLE_API_KEY` from the
 cluster. Origin PR review, comments, the GHA importer, upstream sync,
-the GitHub mirror, and relay stay on self-hosted `macos-release`
-(m5-dev / review-only Linux). Hosted M4 cannot load `CURSOR_API_KEY`,
-`GITHUB_MIRROR_SSH_KEY`, or `PLANETSCALE_*`, and has no `origin` CLI or
+and relay stay on self-hosted `macos-release`
+(m5-dev / review-only Linux). Hosted M4 cannot load `CURSOR_API_KEY`
+or `PLANETSCALE_*`, and has no `origin` CLI or
 macos-release file-store fallbacks; do not add those secrets to hosted
 queues. Never give a leftover self-hosted agent `pull_request` labels.
 
@@ -382,3 +387,5 @@ scheduled-task definitions for rollback. An existing installation without `app-u
 older GitHub-provider build, needs a one-time manual install of the fork release; do not leave a
 legacy staged installer active while waiting for that bootstrap because it can replace the app
 with an older local build.
+
+Local release workers keep installer output in `release-publish/`. Buildkite artifact uploads run only inside a Buildkite job. On a provisioned Linux worker, set `T3CODE_LINUX_DEPS_PREINSTALLED=1` to skip package installation that needs `sudo`; install the listed system dependencies before enabling that worker.

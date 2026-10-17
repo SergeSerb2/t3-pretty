@@ -22,7 +22,6 @@ import {
   ThreadId,
   ThreadLinkedPullRequest,
   ThreadSceneryAssignment,
-  ThreadSubagentPolicy,
   ThreadAutomationRun,
   EnabledSkillIds,
   ThreadPullRequestLink,
@@ -60,7 +59,6 @@ interface LegacyThreadRow {
   readonly stored_at: string | null;
   readonly scenery_json: string | null;
   readonly enabled_skill_ids: string;
-  readonly subagent_policy_json: string | null;
   readonly automation_run_json: string | null;
   readonly settled_override: string | null;
   readonly settled_at: string | null;
@@ -206,7 +204,6 @@ const decodeAttachments = Schema.decodeUnknownOption(Schema.Array(ChatAttachment
 const decodePullRequests = Schema.decodeUnknownOption(Schema.Array(ThreadPullRequestLink));
 const decodeScenery = Schema.decodeUnknownOption(ThreadSceneryAssignment);
 const decodeSkills = Schema.decodeUnknownOption(EnabledSkillIds);
-const decodeSubagentPolicy = Schema.decodeUnknownOption(ThreadSubagentPolicy);
 const decodeAutomationRun = Schema.decodeUnknownOption(ThreadAutomationRun);
 const decodeLinkedPullRequest = Schema.decodeUnknownOption(ThreadLinkedPullRequest);
 const decodeStoredTurnItem = Schema.decodeUnknownOption(
@@ -324,10 +321,6 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
         ? null
         : Option.getOrNull(decodeScenery(parseJson(row.scenery_json))),
     enabledSkillIds: Option.getOrElse(decodeSkills(parseJson(row.enabled_skill_ids)), () => []),
-    subagentPolicy:
-      row.subagent_policy_json == null
-        ? null
-        : Option.getOrNull(decodeSubagentPolicy(parseJson(row.subagent_policy_json))),
     automationRun:
       row.automation_run_json == null
         ? null
@@ -657,7 +650,6 @@ const make = Effect.gen(function* () {
         thread.stored_at,
         thread.scenery_json,
         thread.enabled_skill_ids,
-        thread.subagent_policy_json,
         thread.automation_run_json,
         thread.settled_override,
         thread.settled_at,
@@ -681,7 +673,6 @@ const make = Effect.gen(function* () {
       WHERE json_type(projection.payload_json, '$.storedAt') IS NULL
          OR json_type(projection.payload_json, '$.scenery') IS NULL
          OR json_type(projection.payload_json, '$.enabledSkillIds') IS NULL
-         OR json_type(projection.payload_json, '$.subagentPolicy') IS NULL
          OR json_type(projection.payload_json, '$.automationRun') IS NULL
          OR json_type(projection.payload_json, '$.pinnedAt') IS NULL
          OR json_type(projection.payload_json, '$.pinOrderKey') IS NULL
@@ -724,7 +715,6 @@ const make = Effect.gen(function* () {
           storedAt: current.storedAt,
           scenery: current.scenery,
           enabledSkillIds: current.enabledSkillIds,
-          subagentPolicy: current.subagentPolicy,
           automationRun: current.automationRun,
           pinnedAt: current.pinnedAt,
           autoSettleDisabledAt: current.autoSettleDisabledAt,
@@ -746,8 +736,6 @@ const make = Effect.gen(function* () {
         scenery: current.scenery === undefined ? legacy.scenery : current.scenery,
         enabledSkillIds:
           current.enabledSkillIds === undefined ? legacy.enabledSkillIds : current.enabledSkillIds,
-        subagentPolicy:
-          current.subagentPolicy === undefined ? legacy.subagentPolicy : current.subagentPolicy,
         automationRun:
           current.automationRun === undefined ? legacy.automationRun : current.automationRun,
         pinnedAt: current.pinnedAt === undefined ? legacy.pinnedAt : current.pinnedAt,
@@ -842,7 +830,6 @@ const make = Effect.gen(function* () {
         thread.stored_at,
         thread.scenery_json,
         thread.enabled_skill_ids,
-        thread.subagent_policy_json,
         thread.automation_run_json,
         thread.settled_override,
         thread.settled_at,

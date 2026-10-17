@@ -1,4 +1,5 @@
 import { readCodexAuthDelivery } from "@t3tools/shared/codexAuthHandoff";
+import { providerAuthNavigationUrl } from "@t3tools/shared/providerAuthReturnUrl";
 
 let pending: ReturnType<typeof readCodexAuthDelivery>;
 
@@ -9,7 +10,8 @@ export function prepareProviderAuthDelivery() {
   window.history.replaceState(
     window.history.state,
     "",
-    pending?.returnUrl ?? `${window.location.pathname}${window.location.search}`,
+    providerAuthNavigationUrl(pending?.returnUrl) ??
+      `${window.location.pathname}${window.location.search}`,
   );
 }
 

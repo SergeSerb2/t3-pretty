@@ -624,16 +624,6 @@ it.effect("preserves Pretty stored shelf and scenery behavior in V2", () =>
       enabledSkillIds: ["git", "git", "review"],
     });
     assert.deepEqual((yield* projections.getThread(threadId)).enabledSkillIds, ["git", "review"]);
-    yield* orchestrator.dispatch({
-      type: "thread.subagent-policy.set",
-      commandId: CommandId.make("pretty:policy"),
-      threadId,
-      createdAt: DateTime.formatIso(yield* DateTime.now),
-      subagentPolicy: { mode: "off" },
-    });
-    assert.deepEqual((yield* projections.getThreadShell(threadId))?.subagentPolicy, {
-      mode: "off",
-    });
     const requestId = RuntimeRequestId.make("pretty:pending-input");
     yield* projections.apply({
       id: EventId.make("pretty:pending-input"),

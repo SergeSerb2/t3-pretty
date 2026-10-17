@@ -38,7 +38,13 @@ import {
   selectCliRuntimeExternalDependencies,
 } from "./lib/cli-external-packages.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
-import { loadRepoEnv, resolveBuildFlavor, type T3CodeBuildFlavor } from "./lib/public-config.ts";
+import {
+  isPublicReleaseBuild,
+  loadRepoEnv,
+  PUBLIC_DESKTOP_UPDATE_FEED_URL,
+  resolveBuildFlavor,
+  type T3CodeBuildFlavor,
+} from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 import {
   mergeUpdateManifests,
@@ -50,6 +56,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -1473,10 +1480,6 @@ export function renderMacPasskeyEntitlements(
   const associatedDomains = configuration.rpDomains
     .map((domain) => `      <string>webcredentials:${escapeXml(domain)}</string>`)
     .join("\n");
-  const microphoneEntitlement =
-    configuration.appId === INTERNAL_DESKTOP_APP_ID
-      ? "    <key>com.apple.security.device.audio-input</key>\n    <true/>"
-      : "";
   const keychainAccessGroups = webAuthn.touchIdKeychainAccessGroup
     ? `
     <key>keychain-access-groups</key>
@@ -1504,7 +1507,8 @@ ${associatedDomains}
     </array>${keychainAccessGroups}${browserPasskeys}
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
-${microphoneEntitlement}
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
@@ -3186,6 +3190,7 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   updateChannel: "latest" | "nightly",
 ) {
   const env = yield* Config.all({
+    publicRelease: Config.String("T3CODE_PUBLIC_RELEASE").pipe(Config.option),
     updateFeedUrl: Config.String("T3CODE_DESKTOP_UPDATE_FEED_URL").pipe(Config.option),
     updateRepository: Config.String("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.String("GITHUB_REPOSITORY").pipe(Config.option),
@@ -3193,9 +3198,13 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   // Fork builds publish as full GitHub releases marked latest (prereleases
   // cannot be latest). Prefer a generic latest/download URL so electron-updater
   // fetches nightly.yml / nightly-mac.yml without the GitHub provider or Atom feed.
-  const genericFeedUrl = resolveGenericUpdateFeedUrl(
-    Option.getOrUndefined(env.updateFeedUrl) ?? "",
-  );
+  // Official snapshots also need this feed in clean local builds, where neither
+  // a CI repository variable nor an explicit feed override is present.
+  const genericFeedUrl = isPublicReleaseBuild({
+    T3CODE_PUBLIC_RELEASE: Option.getOrUndefined(env.publicRelease),
+  })
+    ? PUBLIC_DESKTOP_UPDATE_FEED_URL
+    : resolveGenericUpdateFeedUrl(Option.getOrUndefined(env.updateFeedUrl) ?? "");
   if (genericFeedUrl) {
     return {
       provider: "generic" as const,
@@ -3404,14 +3413,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "T3 Pretty captures the active window when you use the window capture shortcut.",
-        ...(buildFlavor === "internal"
-          ? {
-              NSMicrophoneUsageDescription:
-                "T3 Pretty uses your microphone to dictate messages with macOS speech recognition.",
-              NSSpeechRecognitionUsageDescription:
-                "T3 Pretty turns your speech into composer text with macOS speech recognition.",
-            }
-          : {}),
+        NSMicrophoneUsageDescription:
+          "T3 Pretty uses your microphone to dictate messages with macOS speech recognition.",
+        NSSpeechRecognitionUsageDescription:
+          "T3 Pretty turns your speech into composer text with macOS speech recognition.",
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
         CFBundleDocumentTypes: [
@@ -3487,13 +3492,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.toolsets = { appimage: "1.0.3" };
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
+    const executableName = buildFlavor === "internal" ? "t3code" : "t3pretty";
+    const metainfoId = buildFlavor === "internal" ? "com.t3tools.t3code" : PUBLIC_DESKTOP_APP_ID;
     buildConfig.linux = {
       // The .deb is built from the same unpacked app after the AppImage.
       // electron-builder lists both in latest-linux.yml and writes
       // resources/package-type into the .deb only, so electron-updater updates
       // each install in its own format.
       target: target === "AppImage" ? [target, "deb"] : [target],
-      executableName: "t3code",
+      executableName,
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
@@ -3510,16 +3517,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: executableName,
         },
       },
     };
     buildConfig.deb = {
+      // The staged npm name remains t3code. FPM otherwise uses it for both
+      // flavors, making a public install replace the internal Debian package.
+      packageName: executableName,
       // FPM runs outside the staged app directory, so source paths must be absolute.
-      // AppStream consumers associate this metadata with our t3code.desktop entry.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
-        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+        `${path.join(repoRoot, `apps/desktop/resources/linux/${metainfoId}.metainfo.xml`)}=/usr/share/metainfo/${metainfoId}.metainfo.xml`,
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/${executableName}/copyright`,
       ],
       // Electron's runtime libraries. Debian 13 and Ubuntu 24.04 renamed some
       // for 64-bit time; the old name is the fallback for older releases.
@@ -4493,7 +4502,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // entitlement as the app, or Hardened Runtime denies access before macOS
   // can show a prompt. Keep associated-domains off this inherited file.
   const macDictationEntitlementsPath =
-    options.platform === "mac" && buildFlavor === "internal"
+    options.platform === "mac"
       ? path.join(stageAppDir, "entitlements.mac.inherit.plist")
       : undefined;
   if (macDictationEntitlementsPath) {
@@ -4609,6 +4618,18 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       buildFlavor,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+    ).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: Object.fromEntries(
+              Object.entries(repoEnv).filter(
+                (entry): entry is [string, string] => entry[1] !== undefined,
+              ),
+            ),
+          }),
+        ),
+      ),
     ),
     dependencies: stageDependencies,
     devDependencies: {

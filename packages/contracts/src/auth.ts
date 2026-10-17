@@ -487,10 +487,17 @@ export class EnvironmentAuthorizationError extends Schema.TaggedError<Environmen
   },
 ) {
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
-  constructor(props: { readonly message: string; readonly requiredScope: AuthEnvironmentScope }) {
+  constructor(props: {
+    readonly message: string;
+    readonly requiredScope: AuthEnvironmentScope;
+    readonly requiredPermission?: string;
+  }) {
     super({
       message: props.message.slice(0, AUTH_ERROR_MESSAGE_MAX_LENGTH),
       requiredScope: props.requiredScope,
+      ...(props.requiredPermission === undefined
+        ? {}
+        : { requiredPermission: props.requiredPermission }),
     } as any);
   }
 }

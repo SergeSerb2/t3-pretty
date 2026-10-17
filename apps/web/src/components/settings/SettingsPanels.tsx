@@ -654,6 +654,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
+      ...(settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders
+        ? ["Update providers automatically"]
+        : []),
       ...(settings.continueThreadsAfterServerUpdate !==
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
@@ -738,6 +741,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.clearAgentResponses,
       settings.persistComposerContextStrip,
       settings.enableProviderUpdateChecks,
+      settings.autoUpdateProviders,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleKeepPullRequests,
@@ -857,6 +861,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       clearAgentResponses: DEFAULT_UNIFIED_SETTINGS.clearAgentResponses,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
@@ -2410,6 +2415,12 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadRestartContinuation === true,
     );
+  // Older servers drop the key from the shared patch, so one of them must not
+  // stop the others from turning automatic updates off.
+  const providerAutoUpdateSupport = connectedEnvironments.map(
+    (target) => target.serverConfig?.environment.capabilities.providerAutoUpdate === true,
+  );
+  const supportsProviderAutoUpdate = providerAutoUpdateSupport.includes(true);
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -3107,6 +3118,44 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
               }
               aria-label="Check provider versions"
+            />
+          }
+        />
+
+        <SettingsRow
+          serverScoped
+          settingKeys={["autoUpdateProviders"]}
+          {...searchableSetting("provider-auto-update")}
+          description="Install new provider CLI releases on every connected machine when no agent is using that provider. Needs provider update checks."
+          status={
+            !supportsProviderAutoUpdate
+              ? "Update the selected servers to use automatic provider updates."
+              : providerAutoUpdateSupport.includes(false)
+                ? "Older servers ignore this setting until they are updated."
+                : undefined
+          }
+          resetAction={
+            supportsProviderAutoUpdate &&
+            settings.autoUpdateProviders !== DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders ? (
+              <SettingResetButton
+                label="automatic provider updates"
+                onClick={() =>
+                  updateSettings({
+                    autoUpdateProviders: DEFAULT_UNIFIED_SETTINGS.autoUpdateProviders,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <ScopedSwitch
+              settingKeys={["autoUpdateProviders"]}
+              checked={settings.autoUpdateProviders}
+              disabled={!supportsProviderAutoUpdate}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoUpdateProviders: Boolean(checked) })
+              }
+              aria-label="Update providers automatically"
             />
           }
         />

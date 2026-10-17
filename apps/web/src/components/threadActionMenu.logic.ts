@@ -7,6 +7,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | "share-thread"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
@@ -113,6 +114,7 @@ export interface ThreadActionMenuState {
     readonly storage: boolean;
     readonly pinning: boolean;
     readonly titleRegeneration: boolean;
+    readonly sharing?: boolean;
   };
   readonly snoozePresets: ReadonlyArray<SnoozePreset>;
 }
@@ -314,7 +316,18 @@ export function buildThreadActionMenuItems(
     { id: "delete", label: "Delete", destructive: true, icon: "trash" },
   ];
 
-  const items = joinGroups([lifecycle, edit, [copy, projectSettings], danger]);
+  const items = joinGroups([
+    lifecycle,
+    edit,
+    [
+      ...(state.supports.sharing
+        ? [{ id: "share-thread" as const, label: "Share publicly…", icon: "share-2" }]
+        : []),
+      copy,
+      projectSettings,
+    ],
+    danger,
+  ]);
   return state.canOperate
     ? items
     : items.map((item) =>

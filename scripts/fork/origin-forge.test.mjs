@@ -793,14 +793,7 @@ describe("Origin release and blocked-sync helpers", () => {
     assert.include(pipeline, "queue: linux-small");
     const dmgStep = pipeline.slice(pipeline.indexOf(":mac: macOS arm64 DMG"));
     assert.include(dmgStep.slice(0, 900), "queue: macos-large");
-    const mirrorStep = pipeline.slice(
-      pipeline.indexOf(":github: Mirror Origin main and release tags"),
-      pipeline.indexOf(":github: T3 Pretty Origin workflows"),
-    );
     const relayStep = pipeline.slice(pipeline.indexOf(":cloud: Relay"));
-    assert.include(mirrorStep, "queue: macos-release");
-    assert.include(mirrorStep, "os: macos");
-    assert.notInclude(mirrorStep, "queue: macos-medium");
     assert.include(relayStep, "queue: macos-release");
     assert.include(relayStep, "os: macos");
     assert.notInclude(relayStep, "queue: macos-medium");

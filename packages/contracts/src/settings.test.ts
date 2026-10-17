@@ -23,6 +23,43 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("retired subagent policy settings", () => {
+  it("loads saved settings without restoring the obsolete policy", () => {
+    const settings = decodeServerSettings({
+      globalThreadInstructions: "Keep tasks small.",
+      subagentPolicy: {
+        enabled: false,
+        children: { codex: { model: "gpt-5.6-luna" } },
+      },
+    });
+
+    expect(settings.globalThreadInstructions).toBe("Keep tasks small.");
+    expect(encodeServerSettings(settings)).not.toHaveProperty("subagentPolicy");
+    expect(decodeServerSettingsPatch({ subagentPolicy: { enabled: false } })).toEqual({});
+  });
+});
+
+describe("shared scenery appearance", () => {
+  it("keeps old servers' missing appearance distinct from a published default", () => {
+    expect(decodeServerSettings({}).sceneryAppearance).toBeNull();
+    const patch = { sceneryAppearance: { blur: 0, translucency: 0.5, contrast: 100 } };
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+    expect(encodeServerSettings(decodeServerSettings(patch))).toMatchObject(patch);
+  });
+
+  it.each([
+    { blur: -1 },
+    { blur: 101 },
+    { blur: 0.5 },
+    { translucency: 0.49 },
+    { translucency: 1.01 },
+    { translucency: Number.NaN },
+    { contrast: 201 },
+  ])("rejects invalid appearance values %j", (sceneryAppearance) => {
+    expect(() => decodeServerSettingsPatch({ sceneryAppearance })).toThrow();
+  });
+});
+
 describe("thread instructions settings", () => {
   it("keeps existing installations free of custom guidance", () => {
     expect(decodeServerSettings({}).globalThreadInstructions).toBe("");

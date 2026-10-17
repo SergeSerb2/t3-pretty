@@ -23,6 +23,22 @@ export const RESOURCE_ATTRIBUTION_ENTRY_MAX_COUNT = 256;
 export const RESOURCE_ATTRIBUTION_LABEL_MAX_LENGTH = 128;
 export const RESOURCE_TELEMETRY_HEALTH_ERROR_MAX_LENGTH = 4_096;
 
+export const HOST_AGENT_PERF_ERROR_MAX_LENGTH = 500;
+
+/**
+ * The host's Agent Perf benchmark state. AgentMark 1000 is the benchmark's
+ * reference machine; a host twice as fast at local agent work scores 2000.
+ */
+export const HostAgentPerf = Schema.Struct({
+  /** Last successful score. Failed and stopped runs keep it. */
+  agentMark: Schema.NullOr(Schema.Finite.check(Schema.isGreaterThan(0))),
+  measuredAt: Schema.NullOr(NonNegativeInt),
+  running: Schema.Boolean,
+  /** Why the last attempt failed. A successful run clears it. */
+  error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(HOST_AGENT_PERF_ERROR_MAX_LENGTH))),
+});
+export type HostAgentPerf = typeof HostAgentPerf.Type;
+
 /** Whole-host capacity, independent of T3's process diagnostics. */
 export const HostResourcesSnapshot = Schema.Struct({
   sampledAt: NonNegativeInt,
@@ -30,6 +46,8 @@ export const HostResourcesSnapshot = Schema.Struct({
   cpuCount: NonNegativeInt,
   availableMemoryBytes: NonNegativeInt,
   totalMemoryBytes: NonNegativeInt,
+  /** Present while `agentPerfBenchmarks` is on. */
+  agentPerf: Schema.optionalKey(HostAgentPerf),
 });
 export type HostResourcesSnapshot = typeof HostResourcesSnapshot.Type;
 

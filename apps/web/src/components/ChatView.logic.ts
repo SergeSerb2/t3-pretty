@@ -53,7 +53,12 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  composerDraftHasUserContent,
+  type ComposerImageAttachment,
+  type ComposerThreadDraftState,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadShells, environmentThreadDetails } from "../state/threads";
 import { waitForAtomValue } from "../state/waitForAtomValue";
@@ -1538,9 +1543,13 @@ export interface PlanFollowUpComposerSnapshot {
  * Puts back everything a plan follow-up send cleared when the send fails. The
  * caller clears the composer before awaiting the send, so every field it held
  * has to be written back here: a dropped field silently discards user context.
+ * A newer draft owns the composer and must survive a delayed failure.
  */
 export function restorePlanFollowUpComposer(input: {
   readonly snapshot: PlanFollowUpComposerSnapshot;
+  readonly currentDraft: ComposerThreadDraftState | null;
+  readonly targetKey: string;
+  readonly currentTargetKey: () => string | null;
   readonly writePrompt: (prompt: string) => void;
   readonly writeTerminalContexts: (contexts: ReadonlyArray<TerminalContextDraft>) => void;
   readonly writeReviewComments: (comments: ReadonlyArray<ReviewCommentContext>) => void;
@@ -1551,17 +1560,21 @@ export function restorePlanFollowUpComposer(input: {
     prompt: string;
     detectTrigger: boolean;
   }) => void;
-}): void {
+}): boolean {
+  if (composerDraftHasUserContent(input.currentDraft)) return false;
   input.writePrompt(input.snapshot.prompt);
   input.writeTerminalContexts(input.snapshot.terminalContexts);
   input.writeReviewComments(input.snapshot.reviewComments);
   input.writePreviewAnnotations(input.snapshot.previewAnnotations);
   input.writeThreadContexts(input.snapshot.threadContexts);
-  input.resetCursor({
-    cursor: collapseExpandedComposerCursor(input.snapshot.prompt, input.snapshot.prompt.length),
-    prompt: input.snapshot.prompt,
-    detectTrigger: true,
-  });
+  if (input.currentTargetKey() === input.targetKey) {
+    input.resetCursor({
+      cursor: collapseExpandedComposerCursor(input.snapshot.prompt, input.snapshot.prompt.length),
+      prompt: input.snapshot.prompt,
+      detectTrigger: true,
+    });
+  }
+  return true;
 }
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";

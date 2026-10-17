@@ -29,6 +29,9 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import * as PreviewControlsHandlers from "./toolkits/previewControls/handlers.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
+import { RemoteContextToolkit } from "./toolkits/remoteContext/tools.ts";
+import * as RemoteContextHandlers from "./toolkits/remoteContext/handlers.ts";
+import * as RemoteContext from "../relay/RemoteContext.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
@@ -874,11 +877,7 @@ export const layerPreviewToolkit = Layer.mergeAll(
 
 const toolkitWithoutInvocationContext = <A, E, R>(layer: Layer.Layer<A, E, R>) => {
   // @effect-diagnostics-next-line unsafeEffectTypeAssertion:off - the auth middleware provides it per request.
-  return layer as Layer.Layer<
-    A,
-    E,
-    Exclude<R, McpInvocationContext.McpInvocationContext>
-  >;
+  return layer as Layer.Layer<A, E, Exclude<R, McpInvocationContext.McpInvocationContext>>;
 };
 
 export const ComputerUseToolkitRegistrationLive = toolkitWithoutInvocationContext(
@@ -959,6 +958,9 @@ export const layerMcpTransport = layerMcpTransportAt("/mcp");
 // API key requests) beside capability-gated ones, so the transport admits any
 // valid credential and each tool checks its own capability.
 const PreviewMcpServerLive = Layer.mergeAll(
+  toolkitRegistration(RemoteContextToolkit, RemoteContextHandlers.layer).pipe(
+    Layer.provide(RemoteContext.layer),
+  ),
   layerPreviewToolkit,
   layerOrchestratorToolkit,
   layerThreadToolkit,

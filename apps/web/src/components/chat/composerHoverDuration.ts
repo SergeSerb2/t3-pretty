@@ -106,6 +106,13 @@ export function createComposerHoverTracker() {
   let approachSpeed = 0;
   let approachStamp = 0;
 
+  const resetSpeed = () => {
+    smoothed = 0;
+    lastSpeed = 0;
+    approachSpeed = 0;
+    approachStamp = 0;
+  };
+
   const noteApproach = (now: number) => {
     if (approachStamp === 0 || now - approachStamp >= 36) {
       approachSpeed = smoothed;
@@ -115,6 +122,7 @@ export function createComposerHoverTracker() {
 
   return {
     sample(x: number, y: number, t: number): ComposerHoverSample {
+      if (t - lastT >= COMPOSER_HOVER_SPEED_STALE_MS) resetSpeed();
       if (lastT !== 0) {
         noteApproach(t);
         const instant = pointerSpeedPxPerMs(lastX, lastY, lastT, x, y, t);
@@ -128,6 +136,7 @@ export function createComposerHoverTracker() {
     },
 
     crossing(x: number, y: number, t: number): ComposerHoverSample {
+      if (t - lastT >= COMPOSER_HOVER_SPEED_STALE_MS) resetSpeed();
       const instant = composerHoverPointerSpeed(lastX, lastY, lastT, lastSpeed, x, y, t);
       const speed = smoothed > 0 ? smoothed * 0.35 + instant * 0.65 : instant;
       return { speed, approachSpeed };
@@ -135,8 +144,7 @@ export function createComposerHoverTracker() {
 
     /** The pointer went quiet. The next cross should read as a slow hand. */
     rest(): void {
-      smoothed = 0;
-      lastSpeed = 0;
+      resetSpeed();
     },
   };
 }

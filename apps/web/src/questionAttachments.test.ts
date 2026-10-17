@@ -7,6 +7,7 @@ import {
   questionAttachmentDraftPrefix,
   changeQuestionAttachmentPreparation,
   clearQuestionAttachmentDraft,
+  reconcileQuestionAttachmentDrafts,
   useQuestionAttachmentPreparation,
 } from "./questionAttachments";
 
@@ -66,6 +67,106 @@ it("scopes provider request ids to their environment and thread", () => {
   ];
   expect(new Set(keys).size).toBe(3);
 });
+
+it("keeps question files and in-flight preparation while thread detail loads", () => {
+  const store = useComposerDraftStore.getState();
+  const key = questionAttachmentDraftId(environmentId, threadId, requestId, "question");
+  store.addFiles(key, [
+    {
+      type: "file",
+      id: "question-file",
+      name: "spec.txt",
+      mimeType: "text/plain",
+      sizeBytes: 4,
+      file: new File(["spec"], "spec.txt", { type: "text/plain" }),
+    },
+  ]);
+  changeQuestionAttachmentPreparation(key, 1);
+  const draft = store.getComposerDraft(key);
+
+  reconcileQuestionAttachmentDrafts({
+    environmentId,
+    threadId,
+    snapshotStatus: "empty",
+    pendingRequests: null,
+  });
+
+  expect(store.getComposerDraft(key)).toBe(draft);
+  expect(useQuestionAttachmentPreparation.getState().counts[key]).toBe(1);
+  expect(release).not.toHaveBeenCalled();
+
+  reconcileQuestionAttachmentDrafts({
+    environmentId,
+    threadId,
+    snapshotStatus: "live",
+    pendingRequests: [{ requestId, questions: [{ id: "question" }] }],
+  });
+  expect(store.getComposerDraft(key)).toBe(draft);
+
+  reconcileQuestionAttachmentDrafts({
+    environmentId,
+    threadId,
+    snapshotStatus: "live",
+    pendingRequests: [],
+  });
+  expect(store.getComposerDraft(key)).toBeNull();
+  expect(useQuestionAttachmentPreparation.getState().counts[key]).toBeUndefined();
+  expect(release).toHaveBeenCalledWith(draft?.files);
+});
+
+it("cleans stale questions only in the loaded thread's environment", () => {
+  const store = useComposerDraftStore.getState();
+  const own = questionAttachmentDraftId(environmentId, threadId, requestId, "question");
+  const other = questionAttachmentDraftId(
+    EnvironmentId.make("other"),
+    threadId,
+    requestId,
+    "question",
+  );
+  store.setPrompt(own, "Answered");
+  store.setPrompt(other, "Still pending");
+
+  reconcileQuestionAttachmentDrafts({
+    environmentId,
+    threadId,
+    snapshotStatus: "live",
+    pendingRequests: [],
+  });
+
+  expect(store.getComposerDraft(own)).toBeNull();
+  expect(store.getComposerDraft(other)?.prompt).toBe("Still pending");
+});
+
+it.each(["cached", "synchronizing"] as const)(
+  "keeps question attachments while a %s snapshot catches up to a pending request",
+  (snapshotStatus) => {
+    const store = useComposerDraftStore.getState();
+    const key = questionAttachmentDraftId(environmentId, threadId, requestId, "question");
+    store.addFiles(key, [
+      {
+        type: "file",
+        id: "pending-file",
+        name: "spec.txt",
+        mimeType: "text/plain",
+        sizeBytes: 4,
+        file: new File(["spec"], "spec.txt"),
+      },
+    ]);
+    changeQuestionAttachmentPreparation(key, 1);
+    const draft = store.getComposerDraft(key);
+
+    reconcileQuestionAttachmentDrafts({
+      environmentId,
+      threadId,
+      snapshotStatus,
+      pendingRequests: [],
+    });
+
+    expect(store.getComposerDraft(key)).toBe(draft);
+    expect(useQuestionAttachmentPreparation.getState().counts[key]).toBe(1);
+    expect(release).not.toHaveBeenCalled();
+  },
+);
 it("does not match drafts belonging to threads with a shared id prefix", () => {
   const prefix = questionAttachmentDraftPrefix(environmentId, threadId);
   expect(

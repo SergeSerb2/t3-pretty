@@ -3838,6 +3838,79 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("holds the ack of a dropped screencast frame until the frame interval ends", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const capturePage = vi.fn(async () => ({
+          toJPEG: () => Buffer.from("fallback-frame"),
+          getSize: () => ({ width: 1280, height: 720 }),
+        }));
+        const sendCommand = vi.fn(async (_method: string, _params?: unknown) => undefined);
+        let attached = false;
+        const messages = captureDebuggerMessages();
+        fromId.mockReturnValue(
+          makeTestPreviewWebContents(capturePage, 42, undefined, {
+            debugger: {
+              isAttached: () => attached,
+              attach: vi.fn(() => {
+                attached = true;
+              }),
+              sendCommand,
+              on: messages.on,
+              off: vi.fn(),
+              detach: vi.fn(() => {
+                attached = false;
+              }),
+            },
+          }),
+        );
+        const { pictureInPictureWindow, send } = makeTestPictureInPictureWindow();
+        browserWindowConstructor.mockImplementation(function () {
+          return pictureInPictureWindow;
+        });
+        const delivered = () =>
+          send.mock.calls.map(([, frame]) => (frame as { data: Buffer }).data.toString());
+        const acked = () =>
+          sendCommand.mock.calls
+            .filter(([method]) => method === "Page.screencastFrameAck")
+            .map(([, params]) => (params as { sessionId: number }).sessionId);
+        const emitFrame = (sessionId: number, data: string) =>
+          messages.emit("Page.screencastFrame", {
+            sessionId,
+            data: Buffer.from(data).toString("base64"),
+            metadata: { deviceWidth: 1280, deviceHeight: 720 },
+          });
+        yield* manager.createTab("tab_screencast_pacing");
+        yield* manager.registerWebview("tab_screencast_pacing", 42);
+        yield* manager.openPictureInPicture("tab_screencast_pacing");
+
+        emitFrame(1, "first-frame");
+        yield* settle(() => delivered().length === 2);
+        expect(acked()).toEqual([1]);
+        expect(delivered()).toEqual(["fallback-frame", "first-frame"]);
+
+        // Chromium sends its next frame only after an ack, so holding this one
+        // paces the screencast to the delivery rate instead of the compositor's.
+        emitFrame(2, "dropped-frame");
+        yield* settle(() => false);
+        expect(acked()).toEqual([1]);
+        expect(delivered()).toEqual(["fallback-frame", "first-frame"]);
+
+        yield* TestClock.adjust(84);
+        yield* settle(() => acked().includes(2));
+        expect(acked()).toEqual([1, 2]);
+        expect(delivered()).toEqual(["fallback-frame", "first-frame"]);
+
+        emitFrame(3, "next-frame");
+        yield* settle(() => delivered().length === 3);
+        expect(acked()).toEqual([1, 2, 3]);
+        expect(delivered()).toEqual(["fallback-frame", "first-frame", "next-frame"]);
+
+        yield* manager.closePictureInPicture("tab_screencast_pacing");
+      }),
+    ),
+  );
+
   effectIt.effect(
     "restores the native cursor when recording startup fails, then allows a retry",
     () =>
@@ -4363,7 +4436,8 @@ describe("PreviewManager", () => {
         yield* manager.stopRecording("tab_pip");
         expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);
         const framesBeforePictureInPictureOnlyTick = pictureInPictureSend.mock.calls.length;
-        yield* TestClock.adjust(100);
+        // The previous tick saw an unchanged frame, so the next one waits twice as long.
+        yield* TestClock.adjust(200);
         expect(capturePage).toHaveBeenCalledTimes(4);
         expect(pictureInPictureSend.mock.calls.length).toBe(framesBeforePictureInPictureOnlyTick);
         expect(recordingFrames).toHaveLength(0);
@@ -4414,6 +4488,55 @@ describe("PreviewManager", () => {
         expect(capturePage).toHaveBeenCalledTimes(capturesAfterClose);
       }),
     ),
+  );
+
+  effectIt.effect(
+    "backs off fallback capture while the picture-in-picture frame is unchanged",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let jpeg = Buffer.from("static-preview-frame");
+          const capturePage = vi.fn(async () => ({
+            toJPEG: () => jpeg,
+            getSize: () => ({ width: 1280, height: 720 }),
+          }));
+          fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
+          const { pictureInPictureWindow, send } = makeTestPictureInPictureWindow();
+          browserWindowConstructor.mockImplementation(function () {
+            return pictureInPictureWindow;
+          });
+
+          yield* manager.createTab("tab_pip_backoff");
+          yield* manager.registerWebview("tab_pip_backoff", 42);
+          yield* manager.openPictureInPicture("tab_pip_backoff");
+          expect(capturePage).toHaveBeenCalledOnce();
+          expect(send).toHaveBeenCalledOnce();
+
+          // Each unchanged frame doubles the wait: 84 ms, then 168 ms.
+          yield* TestClock.adjust(84);
+          yield* settle(() => false);
+          expect(capturePage).toHaveBeenCalledTimes(2);
+          yield* TestClock.adjust(167);
+          yield* settle(() => false);
+          expect(capturePage).toHaveBeenCalledTimes(2);
+          yield* TestClock.adjust(1);
+          yield* settle(() => false);
+          expect(capturePage).toHaveBeenCalledTimes(3);
+          expect(send).toHaveBeenCalledOnce();
+
+          // A changed frame is delivered and restores the full rate.
+          jpeg = Buffer.from("changed-preview-frame");
+          yield* TestClock.adjust(336);
+          yield* settle(() => false);
+          expect(capturePage).toHaveBeenCalledTimes(4);
+          expect(send).toHaveBeenCalledTimes(2);
+          yield* TestClock.adjust(84);
+          yield* settle(() => false);
+          expect(capturePage).toHaveBeenCalledTimes(5);
+
+          yield* manager.closePictureInPicture("tab_pip_backoff");
+        }),
+      ),
   );
 
   effectIt.effect("retries an unchanged picture-in-picture frame after delivery fails", () =>

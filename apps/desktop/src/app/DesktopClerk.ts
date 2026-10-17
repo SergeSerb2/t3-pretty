@@ -11,7 +11,7 @@ import * as Scope from "effect/Scope";
 import { codexAuthDeliveryUrl, readCodexAuthHandoff } from "@t3tools/shared/codexAuthHandoff";
 import { receiveCodexAuthCallback, CodexAuthCallbackError } from "./CodexAuthCallback.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
-import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
+import { providerAuthNavigationUrl } from "@t3tools/shared/providerAuthReturnUrl";
 import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
@@ -172,16 +172,59 @@ export const make = Effect.gen(function* () {
         );
         return true;
       };
+      const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}://app`;
+      // A browser return can launch the app before its real window exists.
+      // Keep it through startup, without navigating a splash or an unready page.
+      let pendingProviderReturn: string | undefined;
+      const flushProviderReturn = (window: Electron.BrowserWindow) =>
+        Effect.gen(function* () {
+          if (
+            pendingProviderReturn === undefined ||
+            window.isDestroyed() ||
+            window.webContents.isLoadingMainFrame() ||
+            !window.webContents.getURL().startsWith(`${expectedOrigin}/`)
+          )
+            return;
+          const destination = pendingProviderReturn;
+          pendingProviderReturn = undefined;
+          yield* Effect.promise(() => window.loadURL(destination));
+          yield* electronWindow.reveal(window);
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Could not return to provider setup", cause),
+          ),
+        );
+      const providerReturnListeners = new Set<() => void>();
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const detach of providerReturnListeners) detach();
+        }),
+      );
+      yield* electronApp.on(
+        "browser-window-created",
+        (_event: unknown, window: Electron.BrowserWindow) => {
+          const contents = window.webContents;
+          const onLoaded = () => runFork(flushProviderReturn(window));
+          const detach = () => {
+            contents.removeListener("did-finish-load", onLoaded);
+            contents.removeListener("did-stop-loading", onLoaded);
+            contents.removeListener("destroyed", detach);
+            providerReturnListeners.delete(detach);
+          };
+          providerReturnListeners.add(detach);
+          contents.on("did-finish-load", onLoaded);
+          contents.on("did-stop-loading", onLoaded);
+          contents.once("destroyed", detach);
+        },
+      );
       const resumeProviderAuth = (value: string | undefined) => {
-        const destination = providerAuthReturnUrl(value);
-        const expectedOrigin = `${ElectronProtocol.getDesktopScheme(environment.isDevelopment)}://app`;
+        const destination = providerAuthNavigationUrl(value);
         if (!destination?.startsWith(`${expectedOrigin}/`)) return false;
+        pendingProviderReturn = destination;
         runFork(
           Effect.gen(function* () {
             const mainWindow = yield* electronWindow.currentMainOrFirst;
-            if (Option.isNone(mainWindow)) return;
-            yield* Effect.promise(() => mainWindow.value.loadURL(destination));
-            yield* electronWindow.reveal(mainWindow.value);
+            if (Option.isSome(mainWindow)) yield* flushProviderReturn(mainWindow.value);
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("Could not return to provider setup", cause),
@@ -198,7 +241,10 @@ export const make = Effect.gen(function* () {
         return true;
       };
       const args = yield* HostProcess.Arguments;
-      args.some((value) => startProviderAuthHandoff(value) || openAppLink(value));
+      args.some(
+        (value) =>
+          startProviderAuthHandoff(value) || resumeProviderAuth(value) || openAppLink(value),
+      );
       // As the default browser, macOS hands T3 Code every web link through the same event.
       const openWebLink = (url: string) => {
         if (!DesktopWebLinks.isWebLink(url)) return false;

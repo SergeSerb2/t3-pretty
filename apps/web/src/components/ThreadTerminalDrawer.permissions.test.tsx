@@ -88,7 +88,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("document", {
     body: {},
-    documentElement: { classList: { contains: () => false } },
+    documentElement: { classList: { contains: () => false }, hasAttribute: () => false },
     querySelector: () => null,
     createElement: () => ({ getContext: () => null }),
   });

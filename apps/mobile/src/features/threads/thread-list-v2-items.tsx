@@ -1,3 +1,5 @@
+import { ThreadShareSheet } from "./ThreadShareSheet";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
   THREAD_LIST_V2_MONO_FONT as MONO_FONT,
@@ -712,6 +714,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly autoSettleOptOutSupported: boolean;
   /** False on servers that predate thread title regeneration. */
   readonly titleRegenerationSupported: boolean;
+  readonly sharingSupported?: boolean;
   readonly nest?: "parent" | "child" | null;
   readonly childCount?: number;
   readonly nestExpanded?: boolean;
@@ -833,6 +836,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   // A recycled cell reassigns this mounted row to a different thread without
   // remounting it, and the render closure stops running while list equality
   // says the item is unchanged — so any row-local UI state must be dismissed
@@ -845,6 +849,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   if (boundIdentity !== rowIdentity) {
     setBoundIdentity(rowIdentity);
     setCustomSnoozeOpen(false);
+    setShareOpen(false);
   }
   const handleSnooze = useCallback(
     (snoozedUntil: string) => onSnoozeThread(thread, snoozedUntil),
@@ -1087,6 +1092,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
+      if (nativeEvent.event === "share-thread" && canOperateThread) setShareOpen(true);
       if (nativeEvent.event === "copy-thread-id") {
         copyTextWithHaptic(thread.id, { target: "thread-id" });
       }
@@ -1107,6 +1113,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       }
     },
     [
+      canOperateThread,
       onNewThreadOnBranch,
       thread,
       handleArchive,
@@ -1771,6 +1778,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       snoozed={snoozedRow}
       settled={variant === "slim" && !snoozedRow && !storedRow}
     >
+      {shareOpen && (
+        <ThreadShareSheet
+          key={rowIdentity}
+          target={scopeThreadRef(thread.environmentId, thread.id)}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}
@@ -1807,6 +1821,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                       image: "square.and.pencil",
                     },
                   ]
+                : []),
+              ...(props.sharingSupported && canOperateThread
+                ? [{ id: "share-thread", title: "Share publicly…", image: "square.and.arrow.up" }]
                 : []),
               { id: "copy-thread-id", title: "Copy thread ID", image: "doc.on.doc" },
               ...(storedRow

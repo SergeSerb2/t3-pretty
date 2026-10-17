@@ -1,3 +1,4 @@
+import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
 import { DraftId, useComposerDraftStore } from "./composerDraftStore";
@@ -60,4 +61,39 @@ export function clearQuestionAttachmentDraft(key: DraftId): void {
     delete next[key];
     return { counts: next };
   });
+}
+
+/** Discard answered questions only after the live thread confirms its pending requests. */
+export function reconcileQuestionAttachmentDrafts(input: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  snapshotStatus: EnvironmentThreadStatus;
+  pendingRequests: ReadonlyArray<{
+    requestId: string;
+    questions: ReadonlyArray<{ id: string }>;
+  }> | null;
+}): void {
+  if (input.snapshotStatus !== "live" || input.pendingRequests === null) return;
+  const prefix = questionAttachmentDraftPrefix(input.environmentId, input.threadId);
+  const retained = new Set(
+    input.pendingRequests.flatMap((request) =>
+      request.questions.map((question) =>
+        questionAttachmentDraftId(
+          input.environmentId,
+          input.threadId,
+          request.requestId,
+          question.id,
+        ),
+      ),
+    ),
+  );
+  const keys = new Set([
+    ...Object.keys(useComposerDraftStore.getState().draftsByThreadKey),
+    ...Object.keys(useQuestionAttachmentPreparation.getState().counts),
+  ]);
+  for (const key of keys) {
+    if (key.startsWith(prefix) && !retained.has(DraftId.make(key))) {
+      clearQuestionAttachmentDraft(DraftId.make(key));
+    }
+  }
 }

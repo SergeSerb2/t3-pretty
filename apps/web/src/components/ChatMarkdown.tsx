@@ -100,9 +100,9 @@ import type {
   ExtraProps as ReactMarkdownExtraProps,
   Options as ReactMarkdownOptions,
 } from "react-markdown";
-import ReactMarkdown from "react-markdown";
 import { toHtml } from "hast-util-to-html";
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
+import { MemoizedReactMarkdown } from "./MemoizedReactMarkdown";
 import { defaultUrlTransform } from "react-markdown";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
@@ -3489,6 +3489,12 @@ function ChatMarkdown({
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   ...props
 }: ChatMarkdownProps) {
+  // Streaming providers deliver many deltas per second. Keep the latest text in
+  // React immediately, but let the markdown parse trail urgent chat and composer
+  // work so intermediate values can be skipped under load. The settled message
+  // bypasses the deferred value so its final contents appear immediately.
+  const deferredText = useDeferredValue(text);
+  const renderedText = props.isStreaming === true ? deferredText : text;
   const {
     componentState,
     handleCopy,
@@ -3496,14 +3502,14 @@ function ChatMarkdown({
     markdownUrlTransform,
     localMediaPreview,
     setLocalMediaPreview,
-  } = useChatMarkdownState({ text, ...props });
+  } = useChatMarkdownState({ text: renderedText, ...props });
   // The completion commit can insert the last block and end the stream at
   // once, so the fade gate outlasts the stream long enough to finish it.
   const fadeArrivals = useHeldFlag(props.isStreaming === true, STREAMING_FADE_HOLD_MS);
   const incrementalParsing =
     props.isStreaming === true &&
     extraRemarkPlugins.length === 0 &&
-    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
+    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(renderedText);
   const remarkPlugins = useMemo(
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
@@ -3528,7 +3534,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ChatMarkdownRendererContext value={componentState}>
-        <ReactMarkdown
+        <MemoizedReactMarkdown
           remarkPlugins={remarkPlugins}
           rehypePlugins={
             parseRawHtml
@@ -3539,8 +3545,8 @@ function ChatMarkdown({
           components={CHAT_MARKDOWN_COMPONENTS}
           urlTransform={markdownUrlTransform}
         >
-          {text}
-        </ReactMarkdown>
+          {renderedText}
+        </MemoizedReactMarkdown>
       </ChatMarkdownRendererContext>
       {localMediaPreview ? (
         <ExpandedImageDialog

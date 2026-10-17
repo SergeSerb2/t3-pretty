@@ -22,9 +22,9 @@ import {
  * the layer for coarse pointers, reduced motion, and the Motion toggle.
  *
  * Enter and exit durations are separate CSS multipliers
- * (`--composer-hover-in` / `--composer-hover-out`). Document pointermove keeps
- * the one you are about to use warm, and only rewrites it when the speed
- * bucket changes, so the :hover transition already has the right pace.
+ * (`--composer-hover-in` / `--composer-hover-out`). Document pointermove only
+ * samples approach speed outside the shell. Boundary events apply that speed
+ * before the hover transition, so moving elsewhere never invalidates composer styles.
  * `--composer-hover-dur` stays in sync for the older glass-shell rules.
  * `--composer-hover-settle` opens the halo once the hand arrives.
  */
@@ -96,7 +96,7 @@ export function ComposerSpecular() {
       else if (settleTimer !== 0) return;
       settleTimer = window.setTimeout(() => {
         settleTimer = 0;
-        if (!pointerInside) return;
+        if (!pointerInside || !motionEnabled()) return;
         haloOpen = true;
         writeSettle(1);
       }, COMPOSER_HOVER_SETTLE_MS);
@@ -105,8 +105,9 @@ export function ComposerSpecular() {
     const armDecay = () => {
       window.clearTimeout(decayTimer);
       decayTimer = window.setTimeout(() => {
+        decayTimer = 0;
         tracker.rest();
-        writeScale(pointerInside ? "exit" : "enter", 0, 0);
+        if (pointerInside && motionEnabled()) writeScale("exit", 0, 0);
       }, COMPOSER_HOVER_SPEED_STALE_MS);
     };
 
@@ -114,9 +115,10 @@ export function ComposerSpecular() {
       if (event.pointerType !== "mouse" || !motionEnabled()) return;
       const sample = tracker.sample(event.clientX, event.clientY, event.timeStamp);
       pointerInside = insideHost(event.target);
-      writeScale(pointerInside ? "exit" : "enter", sample.speed, sample.approachSpeed);
+      if (!pointerInside) return;
+      writeScale("exit", sample.speed, sample.approachSpeed);
       armDecay();
-      if (pointerInside) armSettle(sample.speed);
+      armSettle(sample.speed);
     };
 
     const applyHoverDuration = (event: PointerEvent) => {
@@ -126,7 +128,7 @@ export function ComposerSpecular() {
         insideHost(event.target),
         insideHost(event.relatedTarget),
       );
-      if (entered === null) return;
+      if (entered === null || entered === pointerInside) return;
       pointerInside = entered;
       const sample = tracker.crossing(event.clientX, event.clientY, event.timeStamp);
       // The bucket written on the way in can hide a same-bucket change.
@@ -139,14 +141,16 @@ export function ComposerSpecular() {
         writeSettle(composerHoverSettle(sample.speed));
         armSettle(sample.speed);
         onPointerMove(event);
+        armDecay();
       } else {
         writtenOut = "";
         writeScale("exit", sample.speed, sample.approachSpeed);
         haloOpen = false;
         clearSettleTimer();
         writeSettle(0);
+        window.clearTimeout(decayTimer);
+        decayTimer = 0;
       }
-      armDecay();
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -158,7 +162,7 @@ export function ComposerSpecular() {
       if (frame !== 0) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        if (!motionEnabled()) return;
+        if (!pointerInside || !motionEnabled()) return;
         const rect = host.getBoundingClientRect();
         // Place the glow instantly on entry. Later samples can ease from
         // that painted position instead of sweeping in from the fallback.

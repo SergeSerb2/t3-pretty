@@ -7,6 +7,11 @@ interface ParsedSemver {
 
 const SEMVER_NUMBER_SEGMENT = /^\d+$/;
 
+/** Public release versions are numeric semver, without prerelease or build metadata. */
+export function isStableReleaseVersion(version: string): boolean {
+  return /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version);
+}
+
 function splitPrerelease(version: string): readonly [string, string | undefined] {
   const separator = version.indexOf("-");
   return separator < 0

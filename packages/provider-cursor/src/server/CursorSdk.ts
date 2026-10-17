@@ -3,7 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { Agent, createAgentPlatform, SqliteLocalAgentStore } from "./sdk.ts";
+import { loadCursorSdk, loadCursorSdkSqlite } from "./sdk.ts";
 
 /**
  * The Cursor Agent SDK runs in this process and spawns a shell for tool
@@ -63,9 +63,9 @@ function onUnhandledRejection(reason: unknown): void {
 export class CursorSdk extends Context.Service<
   CursorSdk,
   {
-    readonly Agent: typeof Agent;
-    readonly createAgentPlatform: typeof createAgentPlatform;
-    readonly SqliteLocalAgentStore: typeof SqliteLocalAgentStore;
+    readonly Agent: ReturnType<typeof loadCursorSdk>["Agent"];
+    readonly createAgentPlatform: ReturnType<typeof loadCursorSdk>["createAgentPlatform"];
+    readonly SqliteLocalAgentStore: ReturnType<typeof loadCursorSdkSqlite>["SqliteLocalAgentStore"];
   }
 >()("@t3tools/provider-cursor/server/CursorSdk") {}
 
@@ -80,5 +80,20 @@ export const layer = Layer.effect(
       Effect.sync(() => {
         process.off("unhandledRejection", onUnhandledRejection);
       }),
-  ).pipe(Effect.as(CursorSdk.of({ Agent, createAgentPlatform, SqliteLocalAgentStore }))),
+  ).pipe(
+    Effect.as(
+      // Getters defer loading the SDK until a Cursor agent actually runs.
+      CursorSdk.of({
+        get Agent() {
+          return loadCursorSdk().Agent;
+        },
+        get createAgentPlatform() {
+          return loadCursorSdk().createAgentPlatform;
+        },
+        get SqliteLocalAgentStore() {
+          return loadCursorSdkSqlite().SqliteLocalAgentStore;
+        },
+      }),
+    ),
+  ),
 );

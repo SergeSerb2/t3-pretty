@@ -1,4 +1,10 @@
 import {
+  ThreadShareInput,
+  ThreadSharePublishInput,
+  ThreadShareInfo,
+  ThreadShareError,
+} from "./threadShare.ts";
+import {
   AutomationStreamMessage,
   AutomationClientCommand,
   AutomationsListRunsInput,
@@ -450,6 +456,9 @@ import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
 export const WS_METHODS = {
+  threadShareGet: "threadShare.get",
+  threadSharePublish: "threadShare.publish",
+  threadShareRevoke: "threadShare.revoke",
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
@@ -2242,7 +2251,25 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
   { error: EnvironmentAuthorizationError },
 ) {}
 
+const WsThreadShareGetRpc = Rpc.make(WS_METHODS.threadShareGet, {
+  payload: ThreadShareInput,
+  success: Schema.NullOr(ThreadShareInfo),
+  error: Schema.Union([ThreadShareError, EnvironmentAuthorizationError]),
+});
+const WsThreadSharePublishRpc = Rpc.make(WS_METHODS.threadSharePublish, {
+  payload: ThreadSharePublishInput,
+  success: ThreadShareInfo,
+  error: Schema.Union([ThreadShareError, EnvironmentAuthorizationError]),
+});
+const WsThreadShareRevokeRpc = Rpc.make(WS_METHODS.threadShareRevoke, {
+  payload: ThreadShareInput,
+  error: Schema.Union([ThreadShareError, EnvironmentAuthorizationError]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
+  WsThreadShareGetRpc,
+  WsThreadSharePublishRpc,
+  WsThreadShareRevokeRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

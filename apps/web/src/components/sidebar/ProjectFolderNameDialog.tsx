@@ -1,8 +1,7 @@
 import type { ProjectIconOverride } from "@t3tools/contracts";
-import { useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useState } from "react";
 import { create } from "zustand";
 
-import { ProjectIconPickerDialog } from "../settings/ProjectIconPickerDialog";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -15,6 +14,13 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+
+// The picker indexes every Lucide icon; load it only when a folder icon is requested.
+const ProjectIconPickerDialog = lazy(() =>
+  import("../settings/ProjectIconPickerDialog").then((module) => ({
+    default: module.ProjectIconPickerDialog,
+  })),
+);
 
 type Prompt = {
   readonly title: string;
@@ -70,17 +76,19 @@ export function ProjectFolderIconDialogHost() {
   useEffect(() => () => finishIcon(null), []);
   if (request === null) return null;
   return (
-    <ProjectIconPickerDialog
-      open
-      current={request.current}
-      projectName={request.folderName}
-      title="Choose folder icon"
-      description="Shown on the project rail so folders are easy to tell apart."
-      onOpenChange={(open) => {
-        if (!open) finishIcon(null);
-      }}
-      onSelect={finishIcon}
-    />
+    <Suspense fallback={null}>
+      <ProjectIconPickerDialog
+        open
+        current={request.current}
+        projectName={request.folderName}
+        title="Choose folder icon"
+        description="Shown on the project rail so folders are easy to tell apart."
+        onOpenChange={(open) => {
+          if (!open) finishIcon(null);
+        }}
+        onSelect={finishIcon}
+      />
+    </Suspense>
   );
 }
 

@@ -24,6 +24,7 @@ import {
   AuthSessionState,
   AuthStandardClientScopes,
   AuthTokenExchangeRequest,
+  EnvironmentAuthorizationError,
   authScopeRequiredResponse,
   authScopeResponse,
   sessionGrantsScope,
@@ -38,6 +39,9 @@ const decodePairingLinks = Schema.decodeUnknownSync(AuthPairingLinks);
 const decodeClientSessions = Schema.decodeUnknownSync(AuthClientSessions);
 const decodeAccessTokenResult = Schema.decodeUnknownSync(AuthAccessTokenResult);
 const decodeAccessStreamEvent = Schema.decodeUnknownSync(AuthAccessStreamEvent);
+const authorizationErrorCodec = Schema.toCodecJson(EnvironmentAuthorizationError);
+const encodeAuthorizationError = Schema.encodeSync(authorizationErrorCodec);
+const decodeAuthorizationError = Schema.decodeSync(authorizationErrorCodec);
 const now = DateTime.makeUnsafe(0);
 
 describe("auth contract resource bounds", () => {
@@ -187,6 +191,13 @@ describe("authorization grants", () => {
       const response = authScopeRequiredResponse(scope);
       expect(decodeOldScopes([response.requiredScope])).toEqual([response.requiredScope]);
       expect(response.requiredPermission).toBe(scope);
+      const error = new EnvironmentAuthorizationError({
+        message: "This client needs another permission.",
+        ...response,
+      });
+      const decoded = decodeAuthorizationError(encodeAuthorizationError(error));
+      expect(decodeOldScopes([decoded.requiredScope])).toEqual([response.requiredScope]);
+      expect(decoded.requiredPermission).toBe(scope);
     },
   );
 

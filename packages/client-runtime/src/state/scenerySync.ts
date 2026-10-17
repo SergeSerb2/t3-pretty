@@ -4,6 +4,49 @@
  * thread and replaced only when the catalog changes.
  */
 
+import type { SceneryAppearance } from "@t3tools/contracts/settings";
+
+/** Photo presence has the same scale on every client: 0% = 0.5, 100% = 1. */
+export function translucencyToPhotoPresence(translucency: number): number {
+  return Math.round(((translucency - 0.5) / 0.5) * 100);
+}
+
+export function photoPresenceToTranslucency(presence: number): number {
+  return 0.5 + (presence / 100) * 0.5;
+}
+
+/** Follow the primary's published fields, then fill unset fields from connected peers. */
+export function resolveSharedSceneryAppearance(input: {
+  readonly primaryEnvironmentId: string | null;
+  readonly sources: ReadonlyArray<{
+    readonly environmentId: string;
+    readonly syncEligible: boolean;
+    readonly sceneryAppearance: SceneryAppearance | null | undefined;
+  }>;
+}): SceneryAppearance {
+  const eligible = input.sources
+    .filter((source) => source.syncEligible)
+    .sort((left, right) => {
+      if (left.environmentId === right.environmentId) return 0;
+      if (left.environmentId === input.primaryEnvironmentId) return -1;
+      if (right.environmentId === input.primaryEnvironmentId) return 1;
+      return left.environmentId.localeCompare(right.environmentId);
+    });
+  let blur: number | undefined;
+  let translucency: number | undefined;
+  let contrast: number | undefined;
+  for (const source of eligible) {
+    blur ??= source.sceneryAppearance?.blur;
+    translucency ??= source.sceneryAppearance?.translucency;
+    contrast ??= source.sceneryAppearance?.contrast;
+  }
+  return {
+    ...(blur === undefined ? {} : { blur }),
+    ...(translucency === undefined ? {} : { translucency }),
+    ...(contrast === undefined ? {} : { contrast }),
+  };
+}
+
 export function resolveSharedSceneryPhotoSet(input: {
   readonly primaryEnvironmentId: string | null;
   readonly sources: ReadonlyArray<{

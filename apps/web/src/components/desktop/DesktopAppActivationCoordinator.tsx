@@ -6,6 +6,7 @@ import { handleDesktopAppActivationRequest } from "../../desktopAppActivation";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { findProjectByPath, inferProjectTitleFromPath } from "../../lib/projectPaths";
 import { newProjectId } from "../../lib/utils";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { readProjects, waitForProject } from "../../state/entities";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
@@ -26,9 +27,10 @@ export function DesktopAppActivationCoordinator() {
   );
   const ready =
     activation !== undefined &&
-    primaryEnvironment?.connection.phase === "connected" &&
-    primaryEnvironment.serverConfig !== null &&
-    shell.data?.snapshot._tag === "Some";
+    (isLocalEnvironmentDisabled() ||
+      (primaryEnvironment?.connection.phase === "connected" &&
+        primaryEnvironment.serverConfig !== null &&
+        shell.data?.snapshot._tag === "Some"));
 
   const processRequest = useEffectEvent(async (request: DesktopAppActivationRequest) =>
     handleDesktopAppActivationRequest(request, {

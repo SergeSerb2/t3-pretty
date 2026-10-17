@@ -11,6 +11,7 @@ import {
   type OrchestrationV2ShellSnapshot,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -24,6 +25,12 @@ import * as EnvironmentRegistry from "../connection/registry.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { createThreadEnvironmentAtoms } from "./threadCommands.ts";
+import {
+  makeThreadLifecycleOutbox,
+  ThreadLifecycleOutbox,
+  ThreadLifecycleOutboxPersistenceError,
+  ThreadLifecycleOutboxStore,
+} from "./threadLifecycleOutbox.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("remote");
 const THREAD_ID = ThreadId.make("thread");
@@ -81,7 +88,9 @@ const SNAPSHOT: OrchestrationV2ShellSnapshot = {
   ],
 };
 
-const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
+const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (
+  outbox?: ThreadLifecycleOutbox["Service"],
+) {
   const requests = yield* Queue.unbounded<{
     command: OrchestrationV2Command;
     reply: Deferred.Deferred<{ sequence: number }, Error>;
@@ -114,6 +123,7 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
           digest: (_algorithm, data) => Effect.succeed(data),
         }),
       ),
+      ...(outbox === undefined ? [] : [Layer.succeed(ThreadLifecycleOutbox, outbox)]),
     ),
   );
   const snapshotAtom = Atom.family((_environmentId: EnvironmentId) => Atom.make(SNAPSHOT));
@@ -122,10 +132,38 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
   yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
   const visibleAtom = commands.snapshotAtom(ENVIRONMENT_ID);
   registry.mount(visibleAtom);
-  return { registry, commands, snapshotAtom, visibleAtom, requests };
+  return { registry, commands, snapshotAtom, visibleAtom, requests, supervisor };
 });
 
 describe("remote thread lifecycle commands", () => {
+  it.effect("rolls back a rejected offline queue admission without dispatching live", () =>
+    Effect.gen(function* () {
+      const failure = new ThreadLifecycleOutboxPersistenceError({
+        operation: "save",
+        message: "The offline thread queue is full.",
+      });
+      const outbox = yield* makeThreadLifecycleOutbox().pipe(
+        Effect.provideService(ThreadLifecycleOutboxStore, {
+          load: () => Effect.succeed([]),
+          save: () => Effect.fail(failure),
+        }),
+      );
+      const h = yield* makeHarness(outbox);
+      yield* SubscriptionRef.set(h.supervisor.session, Option.none());
+      const result = yield* Effect.promise(() =>
+        h.commands.settle.run(h.registry, {
+          environmentId: ENVIRONMENT_ID,
+          input: { threadId: THREAD_ID, commandId: CommandId.make("rejected-offline") },
+        }),
+      );
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(Cause.squash(result.cause)).toBe(failure);
+      expect(h.registry.get(h.visibleAtom)).toBe(SNAPSHOT);
+      expect(yield* Queue.size(h.requests)).toBe(0);
+      expect((yield* SubscriptionRef.get(outbox.pending)).has(ENVIRONMENT_ID)).toBe(false);
+    }),
+  );
+
   const actions = [
     ["settle", {}, { settledOverride: "settled", pinnedAt: null, snoozedUntil: null }],
     ["unsettle", { reason: "user" }, { settledOverride: "active", settledAt: null }],

@@ -4,8 +4,10 @@ import {
   type EnvironmentId,
   type ExecutionEnvironmentPlatformOs,
   type ProviderDriverKind,
+  type ExecutionEnvironmentCapabilities,
   type ProviderInstanceId,
   type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -102,6 +104,29 @@ function dedupeProvidersByDriver<T extends ServerProvider>(providers: ReadonlyAr
   return [...latestProviderByDriver.values()];
 }
 
+/** A provider snapshot named by its machine when the sidebar pill covers several machines. */
+export type MachineServerProvider = ServerProvider & { readonly machineLabel?: string };
+
+function machineProviderKey(provider: Pick<MachineServerProvider, "driver" | "machineLabel">) {
+  return provider.machineLabel === undefined
+    ? provider.driver
+    : `${provider.machineLabel}/${provider.driver}`;
+}
+
+function dedupeProvidersByMachine<T extends MachineServerProvider>(
+  providers: ReadonlyArray<T>,
+): T[] {
+  const representativeByKey = new Map<string, T>();
+  for (const provider of providers) {
+    const key = machineProviderKey(provider);
+    representativeByKey.set(
+      key,
+      chooseRepresentativeProvider(representativeByKey.get(key), provider) as T,
+    );
+  }
+  return [...representativeByKey.values()];
+}
+
 function dedupeProvidersByInstanceId<T extends ServerProvider>(providers: ReadonlyArray<T>): T[] {
   const latestProviderByInstanceId = new Map<ProviderInstanceId, T>();
 
@@ -128,14 +153,18 @@ function getProviderUpdatedDescription(providerCount: number): string {
     : "New sessions will use the updated providers.";
 }
 
+function onMachine(provider: Pick<MachineServerProvider, "machineLabel">): string {
+  return provider.machineLabel === undefined ? "" : ` on ${provider.machineLabel}`;
+}
+
 function getProviderFailedUpdateTitle(
-  provider: Pick<ServerProvider, "driver" | "versionAdvisory">,
+  provider: Pick<MachineServerProvider, "driver" | "versionAdvisory" | "machineLabel">,
 ): string {
   const providerName = PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver;
   const attemptedVersion = provider.versionAdvisory?.latestVersion;
   return attemptedVersion
-    ? `${providerName} ${formatVersion(attemptedVersion)} update failed`
-    : `${providerName} update failed`;
+    ? `${providerName} ${formatVersion(attemptedVersion)} update failed${onMachine(provider)}`
+    : `${providerName} update failed${onMachine(provider)}`;
 }
 
 export function isProviderUpdateCandidate(
@@ -158,6 +187,43 @@ export function collectProviderUpdateCandidates(
   providers: ReadonlyArray<ServerProvider>,
 ): ProviderUpdateCandidate[] {
   return dedupeProvidersByDriver(providers.filter(isProviderUpdateCandidate));
+}
+
+/** Whether this server installs one-click provider updates on its own. */
+export function serverUpdatesProvidersAutomatically(
+  config:
+    | {
+        readonly environment: {
+          readonly capabilities: Pick<ExecutionEnvironmentCapabilities, "providerAutoUpdate">;
+        };
+        readonly settings: Pick<
+          ServerSettings,
+          "autoUpdateProviders" | "enableProviderUpdateChecks"
+        >;
+      }
+    | null
+    | undefined,
+): boolean {
+  return (
+    config?.environment.capabilities.providerAutoUpdate === true &&
+    config.settings.autoUpdateProviders &&
+    config.settings.enableProviderUpdateChecks
+  );
+}
+
+/**
+ * Update candidates a launch prompt should offer. A server that updates
+ * automatically handles every one-click candidate itself, so only those that
+ * need a manual update remain.
+ */
+export function collectPromptedProviderUpdateCandidates(
+  providers: ReadonlyArray<ServerProvider>,
+  automatic: boolean,
+): ProviderUpdateCandidate[] {
+  const candidates = collectProviderUpdateCandidates(providers);
+  return automatic
+    ? candidates.filter((candidate) => !candidate.versionAdvisory.canUpdate)
+    : candidates;
 }
 
 export function isProviderSettingsUpdateCandidate(
@@ -226,9 +292,12 @@ export function providerUpdateNotificationKey(
   return parts.length > 0 ? parts.join("|") : null;
 }
 
-function formatProviderList(providers: ReadonlyArray<Pick<ServerProvider, "driver">>) {
+function formatProviderList(
+  providers: ReadonlyArray<Pick<MachineServerProvider, "driver" | "machineLabel">>,
+) {
   const names = providers.map(
-    (provider) => PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver,
+    (provider) =>
+      `${PROVIDER_DISPLAY_NAMES[provider.driver] ?? provider.driver}${onMachine(provider)}`,
   );
   if (names.length <= 2) {
     return names.join(" and ");
@@ -454,7 +523,12 @@ function isRecentTerminalProvider(
   if (status !== "failed" && status !== "unchanged" && status !== "succeeded") {
     return false;
   }
-  if (visibleAfterIso === undefined) {
+  // An automatic failure stays flagged until an attempt succeeds, even one
+  // from before this app session: nobody may have been watching when it ran.
+  if (
+    visibleAfterIso === undefined ||
+    (provider.updateState?.automatic && status !== "succeeded")
+  ) {
     return true;
   }
   const finishedAt = getUpdateFinishedAt(provider);
@@ -471,32 +545,38 @@ function latestFinishedAtForProviders(providers: ReadonlyArray<ServerProvider>):
   }, null);
 }
 
+/**
+ * The sidebar pill for provider updates. Snapshots from several machines carry
+ * `machineLabel`, so a failure names its machine; progress and success are
+ * summarized per provider, since every machine moves to the same release.
+ */
 export function getProviderUpdateSidebarPillView(
-  providers: ReadonlyArray<ServerProvider>,
+  providers: ReadonlyArray<MachineServerProvider>,
   options?: ProviderUpdateSidebarPillOptions,
 ): ProviderUpdateSidebarPillView | null {
-  const dedupedProviders = dedupeProvidersByDriver(providers);
-  const activeProviders = dedupedProviders.filter(isProviderUpdateActive);
-  if (activeProviders.length > 0) {
-    const activeProvider = activeProviders[0]!;
-    const activeProviderName =
-      PROVIDER_DISPLAY_NAMES[activeProvider.driver] ?? activeProvider.driver;
-    return {
-      key: `loading:${activeProviders
-        .map((provider) => `${provider.driver}:${provider.updateState?.status ?? "idle"}`)
-        .toSorted()
-        .join("|")}`,
-      tone: "loading",
-      title:
-        activeProviders.length === 1
-          ? `Updating ${activeProviderName}`
-          : `Updating ${activeProviders.length} providers`,
-      description:
-        activeProviders.length === 1
-          ? `${formatProviderList(activeProviders)} update in progress.`
-          : `${formatProviderList(activeProviders)} updates are in progress.`,
-    };
-  }
+  const dedupedProviders = dedupeProvidersByMachine(providers);
+  const activeProviders = dedupeProvidersByDriver(
+    dedupedProviders.filter(isProviderUpdateActive),
+  ).map(({ machineLabel: _machineLabel, ...provider }) => provider);
+  const activeProvider = activeProviders[0];
+  const loadingView: ProviderUpdateSidebarPillView | null =
+    activeProvider === undefined
+      ? null
+      : {
+          key: `loading:${activeProviders
+            .map((provider) => `${provider.driver}:${provider.updateState?.status ?? "idle"}`)
+            .toSorted()
+            .join("|")}`,
+          tone: "loading",
+          title:
+            activeProviders.length === 1
+              ? `Updating ${PROVIDER_DISPLAY_NAMES[activeProvider.driver] ?? activeProvider.driver}`
+              : `Updating ${activeProviders.length} providers`,
+          description:
+            activeProviders.length === 1
+              ? `${formatProviderList(activeProviders)} update in progress.`
+              : `${formatProviderList(activeProviders)} updates are in progress.`,
+        };
 
   const recentTerminalProviders = dedupedProviders.filter((provider) =>
     isRecentTerminalProvider(provider, options?.visibleAfterIso),
@@ -512,7 +592,7 @@ export function getProviderUpdateSidebarPillView(
       key: `failed:${failedProviders
         .map(
           (provider) =>
-            `${provider.driver}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
+            `${machineProviderKey(provider)}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
         )
         .toSorted()
         .join("|")}`,
@@ -537,14 +617,14 @@ export function getProviderUpdateSidebarPillView(
       key: `unchanged:${unchangedProviders
         .map(
           (provider) =>
-            `${provider.driver}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
+            `${machineProviderKey(provider)}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
         )
         .toSorted()
         .join("|")}`,
       tone: "warning",
       title:
         unchangedProviders.length === 1
-          ? `${unchangedProviderName} still needs an update`
+          ? `${unchangedProviderName} still needs an update${onMachine(unchangedProvider)}`
           : `${unchangedProviders.length} providers still need updates`,
       description: `${formatProviderList(unchangedProviders)} ${
         unchangedProviders.length === 1 ? "still appears" : "still appear"
@@ -553,16 +633,17 @@ export function getProviderUpdateSidebarPillView(
     });
   }
 
-  const succeededProviders = recentTerminalProviders.filter(
-    (provider) => provider.updateState?.status === "succeeded",
-  );
+  // Every machine moves to the same release, so success is summarized per provider.
+  const succeededProviders = dedupeProvidersByDriver(
+    recentTerminalProviders.filter((provider) => provider.updateState?.status === "succeeded"),
+  ).map(({ machineLabel: _machineLabel, ...provider }) => provider);
   if (succeededProviders.length > 0) {
     const succeededProvider = succeededProviders[0]!;
     terminalCandidates.push({
       key: `succeeded:${succeededProviders
         .map(
           (provider) =>
-            `${provider.driver}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
+            `${machineProviderKey(provider)}:${provider.updateState?.finishedAt ?? "pending"}:${provider.updateState?.message ?? ""}`,
         )
         .toSorted()
         .join("|")}`,
@@ -574,6 +655,18 @@ export function getProviderUpdateSidebarPillView(
       description: getProviderUpdatedDescription(succeededProviders.length),
       dismissAfterVisibleMs: PROVIDER_UPDATE_SUCCESS_VISIBLE_MS,
     });
+  }
+
+  if (loadingView !== null) {
+    // Across machines, an update on one must not hide a failure on another:
+    // the failure needs the user, while progress ends on its own. A single
+    // machine keeps showing progress until its run finishes.
+    const failedView = terminalCandidates.find(
+      (candidate) => candidate.tone === "error" && !options?.dismissedKeys?.has(candidate.key),
+    );
+    return failedProviders.some((provider) => provider.machineLabel !== undefined)
+      ? (failedView ?? loadingView)
+      : loadingView;
   }
 
   return (
@@ -733,6 +826,8 @@ export interface LocalEnvironmentProvidersInput {
   readonly isPrimary: boolean;
   readonly connectionState: EnvironmentUpdateConnectionState;
   readonly providers: ReadonlyArray<ServerProvider>;
+  /** The server installs one-click updates itself, so the prompt skips them. */
+  readonly updatesAutomatically?: boolean;
 }
 
 export interface LocalEnvironmentUpdateGroup {
@@ -760,9 +855,14 @@ export function buildLocalEnvironmentUpdateGroups(
     label: environment.label,
     isPrimary: environment.isPrimary,
     isSettling: environment.connectionState === "connecting",
-    candidates: collectProviderUpdateCandidates(environment.providers).filter((candidate) =>
-      canOneClickUpdateProviderCandidate(candidate, environment.providers),
-    ),
+    // This prompt offers only one-click updates, and a server that updates
+    // automatically installs every one of those itself.
+    candidates:
+      environment.updatesAutomatically === true
+        ? []
+        : collectProviderUpdateCandidates(environment.providers).filter((candidate) =>
+            canOneClickUpdateProviderCandidate(candidate, environment.providers),
+          ),
     providers: environment.providers,
   }));
   const isAnySettling = environments.some(

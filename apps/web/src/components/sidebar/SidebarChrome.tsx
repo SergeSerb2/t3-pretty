@@ -330,7 +330,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
           />
         </>
       )}
-      <SidebarUpdatePill />
+      <SidebarUpdatePill orientation={orientation} />
     </SidebarMenu>
   );
 });

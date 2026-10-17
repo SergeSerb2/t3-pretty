@@ -167,7 +167,7 @@ Get-ChildItem (Join-Path $root "release") -File | Where-Object {
 } | Copy-Item -Destination $publish -Force
 
 $buildkiteAgent = "C:\buildkite-agent\service\buildkite-agent.exe"
-if (Test-Path $buildkiteAgent) {
+if ($env:BUILDKITE_JOB_ID -and (Test-Path $buildkiteAgent)) {
   Push-Location $publish
   try {
     & $buildkiteAgent artifact upload "*"

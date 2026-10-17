@@ -4,9 +4,13 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { DesktopAppBrandingSchema } from "@t3tools/contracts";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
+
+const decodeDesktopAppBranding = Schema.decodeSync(DesktopAppBrandingSchema);
 
 const defaultInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -40,6 +44,80 @@ const makeEnvironment = (
 ) => DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(layerEnvironment(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  it.each([
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "1.0.0",
+      stageLabel: "Latest",
+      displayName: "T3 Pretty",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "0.0.45",
+      stageLabel: "Latest",
+      displayName: "T3 Pretty",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: true,
+      appVersion: "1.0.0",
+      stageLabel: "Dev",
+      displayName: "T3 Pretty (Dev)",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "1.0.0-nightly.20261016.1",
+      stageLabel: "Nightly",
+      displayName: "T3 Pretty (Nightly)",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "1.0.0-preview.20261016.1",
+      stageLabel: "Nightly",
+      displayName: "T3 Pretty (Nightly)",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "1.0.0-beta.1",
+      stageLabel: "Beta",
+      displayName: "T3 Pretty (Beta)",
+    },
+    {
+      buildFlavor: "public",
+      isDevelopment: false,
+      appVersion: "1.0.0-pr.955",
+      stageLabel: "Beta",
+      displayName: "T3 Pretty (Beta)",
+    },
+    {
+      buildFlavor: "internal",
+      isDevelopment: false,
+      appVersion: "1.0.0",
+      stageLabel: "Beta",
+      displayName: "T3 Pretty Internal (Beta)",
+    },
+    {
+      buildFlavor: "internal",
+      isDevelopment: true,
+      appVersion: "1.0.0",
+      stageLabel: "Dev",
+      displayName: "T3 Pretty Internal (Dev)",
+    },
+  ] as const)(
+    "keeps $buildFlavor $appVersion development=$isDevelopment branding explicit",
+    (input) => {
+      const branding = DesktopEnvironment.resolveDesktopAppBranding(input);
+      assert.equal(branding.stageLabel, input.stageLabel);
+      assert.equal(branding.displayName, input.displayName);
+      assert.deepEqual(decodeDesktopAppBranding(branding), branding);
+    },
+  );
+
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

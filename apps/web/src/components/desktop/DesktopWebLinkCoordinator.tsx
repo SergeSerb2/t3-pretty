@@ -10,6 +10,7 @@ import { isPreviewAvailableFor } from "../../browser/previewRuntime";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import { resolveThreadRouteTarget } from "../../threadRoutes";
 import { assetEnvironment } from "../../state/assets";
@@ -65,10 +66,12 @@ export function DesktopWebLinkCoordinator() {
   const httpBaseUrl = useEnvironmentHttpBaseUrl(primaryEnvironment?.environmentId ?? null);
   const queueRef = useRef(Promise.resolve());
   const webLinks = window.desktopBridge?.webLinks;
+  const localEnvironmentDisabled = isLocalEnvironmentDisabled();
   const ready =
     webLinks !== undefined &&
-    primaryEnvironment?.connection.phase === "connected" &&
-    primaryEnvironment.serverConfig !== null;
+    (localEnvironmentDisabled ||
+      (primaryEnvironment?.connection.phase === "connected" &&
+        primaryEnvironment.serverConfig !== null));
 
   const reportFailure = (url: string, description = url) =>
     toastManager.add(
@@ -102,6 +105,13 @@ export function DesktopWebLinkCoordinator() {
       return;
     }
     const isFile = url.startsWith("file:");
+    if (
+      isFile &&
+      (localEnvironmentDisabled || primaryEnvironment === null || httpBaseUrl === null)
+    ) {
+      reportFailure(url, "Enable the local environment to open files from this machine.");
+      return;
+    }
     const routeParams = router.state.matches.at(-1)?.params ?? {};
     const threadRef =
       threadShowingBrowser(

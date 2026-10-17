@@ -21,7 +21,6 @@ import {
   folderDropBeforeId,
   resolveProjectFolderSettings,
   resolveSidebarProjectScope,
-  shouldLiftProjectFolderSettings,
   type SidebarProjectFolderSettings,
 } from "./sidebarProjectFolders";
 
@@ -181,7 +180,49 @@ describe("shared folder settings", () => {
     sidebarProjectFolderAssignments: { a: "work" },
   };
 
-  it("prefers the first server that already has folders over a local leftover", () => {
+  it("keeps the latest folder placement when machines enumerate servers in different orders", () => {
+    const older = {
+      ...stored,
+      sidebarProjectLayout: {
+        version: 1,
+        folders: stored.sidebarProjectFolders,
+        assignments: stored.sidebarProjectFolderAssignments,
+        projectOrder: [],
+      },
+    };
+    const newer = {
+      sidebarProjectFolders: [
+        { id: "home", name: "Home", collapsed: false },
+        ...stored.sidebarProjectFolders,
+      ],
+      sidebarProjectFolderAssignments: { a: "home", b: "work" },
+    };
+    const updated = {
+      ...newer,
+      sidebarProjectLayout: {
+        version: 2,
+        folders: newer.sidebarProjectFolders,
+        assignments: newer.sidebarProjectFolderAssignments,
+        projectOrder: [],
+      },
+    };
+    const expected = {
+      folders: newer.sidebarProjectFolders,
+      assignments: newer.sidebarProjectFolderAssignments,
+    };
+    expect(resolveProjectFolderSettings([older, updated])).toMatchObject(expected);
+    expect(resolveProjectFolderSettings([updated, older])).toMatchObject(expected);
+  });
+
+  it("does not resurrect folders after the last folder was deleted on another machine", () => {
+    const cleared = {
+      sidebarProjectLayout: { version: 2, folders: [], assignments: {}, projectOrder: [] },
+    };
+    expect(resolveProjectFolderSettings([stored, cleared])).toEqual(empty);
+    expect(resolveProjectFolderSettings([cleared, stored])).toEqual(empty);
+  });
+
+  it("resolves conflicting legacy copies in a stable order", () => {
     expect(
       resolveProjectFolderSettings([
         { sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} },
@@ -207,22 +248,6 @@ describe("shared folder settings", () => {
       folders: stored.sidebarProjectFolders,
       assignments: stored.sidebarProjectFolderAssignments,
     });
-  });
-
-  it("lifts client folders only after a server has loaded and none of them have folders yet", () => {
-    const client = {
-      folders: stored.sidebarProjectFolders,
-      assignments: stored.sidebarProjectFolderAssignments,
-    };
-    expect(shouldLiftProjectFolderSettings({ local: client, servers: [] })).toBe(false);
-    expect(
-      shouldLiftProjectFolderSettings({
-        local: client,
-        servers: [{ sidebarProjectFolders: [], sidebarProjectFolderAssignments: {} }],
-      }),
-    ).toBe(true);
-    expect(shouldLiftProjectFolderSettings({ local: client, servers: [stored] })).toBe(false);
-    expect(shouldLiftProjectFolderSettings({ local: empty, servers: [stored] })).toBe(false);
   });
 });
 

@@ -49,7 +49,6 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { SkillId, SkillsSettings } from "./skills.ts";
-import { SubagentPolicyChildren, SubagentPolicySettings } from "./subagentPolicy.ts";
 import { AppsSettings } from "./apps.ts";
 import { AutomationsSettings } from "./automations.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
@@ -90,6 +89,20 @@ export const SidebarProjectFolder = Schema.Struct({
   icon: Schema.optionalKey(ProjectIconOverride),
 });
 export type SidebarProjectFolder = typeof SidebarProjectFolder.Type;
+
+/** One revision keeps folder membership, folder order, and manual project order together. */
+export const SidebarProjectLayout = Schema.Struct({
+  version: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+  folders: Schema.Array(SidebarProjectFolder),
+  assignments: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
+  projectOrder: Schema.Array(TrimmedNonEmptyString),
+  sortOrder: Schema.optionalKey(SidebarProjectSortOrder),
+  groupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
+  groupingOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
+  ),
+});
+export type SidebarProjectLayout = typeof SidebarProjectLayout.Type;
 
 export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
@@ -162,6 +175,16 @@ export const AppearanceContrast = Schema.Int.check(
 );
 export type AppearanceContrast = typeof AppearanceContrast.Type;
 const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
+
+/** Shared independently so editing a photo slider preserves the other preferences. */
+export const SceneryAppearance = Schema.Struct({
+  blur: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
+  translucency: Schema.optionalKey(
+    Schema.Number.check(Schema.isBetween({ minimum: 0.5, maximum: 1 })),
+  ),
+  contrast: Schema.optionalKey(AppearanceContrast),
+});
+export type SceneryAppearance = typeof SceneryAppearance.Type;
 export const MIN_PANEL_ANIMATION_DURATION_MS = 0;
 export const MAX_PANEL_ANIMATION_DURATION_MS = 400;
 export const PanelAnimationDurationMs = Schema.Int.check(
@@ -573,8 +596,10 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
-  // Local copy used only until the first shared-settings lift. After that the
-  // server fields are the source of truth across connected environments.
+  // Offline cache. The flat folder fields below also let older clients read it.
+  sidebarProjectLayout: Schema.NullOr(SidebarProjectLayout).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1241,6 +1266,18 @@ export const ServerSettings = Schema.Struct({
   ),
   clearAgentResponses: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Install newer provider CLI releases without a client attached. Every
+   * environment polls the same registries, so a user's machines converge on
+   * the same version. Needs `enableProviderUpdateChecks` to find releases.
+   */
+  autoUpdateProviders: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /**
+   * Run the Agent Perf benchmark about once a week while the machine is idle,
+   * so load balancing can favor machines that are faster at agent work. Off
+   * by default: a run loads every core for several minutes.
+   */
+  agentPerfBenchmarks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Retain the update-era key. On by default so restarts resume the work they
   // interrupted; recovery stops after three automatic continuations in a row.
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
@@ -1367,10 +1404,12 @@ export const ServerSettings = Schema.Struct({
   ),
   sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /**
-   * Sidebar rail folders and which projects they hold. Clients that participate
-   * in shared-settings sync write these to every connected environment so a
-   * folder made on one machine appears on the others.
+   * The complete rail layout. Null until a client saves or migrates a layout.
+   * Flat folder fields below mirror it for older clients.
    */
+  sidebarProjectLayout: Schema.NullOr(SidebarProjectLayout).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   sidebarProjectFolders: Schema.Array(SidebarProjectFolder).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1385,6 +1424,10 @@ export const ServerSettings = Schema.Struct({
    * connected environment.
    */
   sceneryPhotoSet: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /** Null until a client publishes appearance preferences; preserves device-local choices. */
+  sceneryAppearance: Schema.NullOr(SceneryAppearance).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   backgroundActivity: BackgroundActivitySettings,
@@ -1515,7 +1558,6 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: SkillsSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  subagentPolicy: SubagentPolicySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   agentMonitoring: AgentMonitoringSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** Advanced with saved consent changes, atomically with the enabled setting. */
@@ -1748,6 +1790,8 @@ export const ServerSettingsPatch = Schema.Struct({
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   clearAgentResponses: Schema.optionalKey(Schema.Boolean),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
+  autoUpdateProviders: Schema.optionalKey(Schema.Boolean),
+  agentPerfBenchmarks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
@@ -1791,6 +1835,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   sidebarAutoSettleKeepPullRequests: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
+  sidebarProjectLayout: Schema.optionalKey(Schema.NullOr(SidebarProjectLayout)),
   sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
   sidebarProjectFolderAssignments: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),
@@ -1798,6 +1843,7 @@ export const ServerSettingsPatch = Schema.Struct({
   sceneryPhotoSet: Schema.optionalKey(
     Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(64))),
   ),
+  sceneryAppearance: Schema.optionalKey(Schema.NullOr(SceneryAppearance)),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(
@@ -1847,12 +1893,6 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   skills: Schema.optionalKey(SkillsSettings),
-  subagentPolicy: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      children: Schema.optionalKey(SubagentPolicyChildren),
-    }),
-  ),
   enableComputerUse: Schema.optionalKey(Schema.Boolean),
   /**
    * Merges per host: a patched field replaces the saved one, so a client sends a per-server-host
@@ -1986,6 +2026,7 @@ export const ClientSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
+  sidebarProjectLayout: Schema.optionalKey(Schema.NullOr(SidebarProjectLayout)),
   sidebarProjectFolders: Schema.optionalKey(Schema.Array(SidebarProjectFolder)),
   sidebarProjectFolderAssignments: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString),

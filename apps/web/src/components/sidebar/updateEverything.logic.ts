@@ -275,6 +275,8 @@ export type UpdateRunLocalState =
 export interface UpdateCapsuleView {
   readonly tone: "default" | "slow" | "failed";
   readonly label: string;
+  /** Short progress below the update icon in the vertical project rail. */
+  readonly compactLabel: string;
   /** For a slow machine, its status and elapsed time, such as "restarting" and "6m". */
   readonly slow?: { readonly status: string; readonly elapsed: string };
   readonly action: "later" | "retry" | "dismiss" | null;
@@ -295,17 +297,25 @@ export function describeUpdateCapsule(
 ): UpdateCapsuleView {
   if (run.phase === "countdown" && run.restartAt !== null) {
     const seconds = Math.max(0, Math.ceil((run.restartAt - now) / 1000));
-    return { tone: "default", label: `Restart in ${seconds}s`, action: "later" };
+    return {
+      tone: "default",
+      label: `Restart in ${seconds}s`,
+      compactLabel: `${seconds}s`,
+      action: "later",
+    };
   }
   if (run.phase === "installing") {
-    return { tone: "default", label: "Restarting…", action: null };
+    return { tone: "default", label: "Restarting…", compactLabel: "…", action: null };
   }
+  const done = machines.filter(({ status }) => status === "done").length;
+  const compactProgress = `${done}/${machines.length}`;
   const active = machines.filter(({ status }) => isActive(status) && status !== "waiting");
   const slowest = active.toSorted((a, b) => a.machine.startedAt - b.machine.startedAt)[0];
   if (slowest && now - slowest.machine.startedAt >= UPDATE_SLOW_AFTER_MS) {
     return {
       tone: "slow",
       label: slowest.machine.label,
+      compactLabel: compactProgress,
       slow: {
         status: RUN_STATUS_LABELS[slowest.status],
         elapsed: formatUpdateElapsed(now - slowest.machine.startedAt),
@@ -313,14 +323,19 @@ export function describeUpdateCapsule(
       action: null,
     };
   }
-  const done = machines.filter(({ status }) => status === "done").length;
   if (machines.some(({ status }) => isActive(status))) {
-    return { tone: "default", label: `${done} of ${machines.length} updated`, action: null };
+    return {
+      tone: "default",
+      label: `${done} of ${machines.length} updated`,
+      compactLabel: compactProgress,
+      action: null,
+    };
   }
   if (local?.status === "downloading") {
     return {
       tone: "default",
       label: `Downloading${local.percent === null ? "" : ` ${Math.floor(local.percent)}%`}`,
+      compactLabel: local.percent === null ? "…" : `${Math.floor(local.percent)}%`,
       action: null,
     };
   }
@@ -329,10 +344,16 @@ export function describeUpdateCapsule(
     return {
       tone: "failed",
       label: failed.length === 1 ? `${failed[0]!.machine.label} failed` : `${failed.length} failed`,
+      compactLabel: `${failed.length}`,
       action: failed.some(({ machine }) => machine.server !== null) ? "retry" : "dismiss",
     };
   }
-  return { tone: "default", label: `${done} of ${machines.length} updated`, action: null };
+  return {
+    tone: "default",
+    label: `${done} of ${machines.length} updated`,
+    compactLabel: compactProgress,
+    action: null,
+  };
 }
 
 export const RUN_STATUS_LABELS: Record<UpdateRunMachineStatus, string> = {

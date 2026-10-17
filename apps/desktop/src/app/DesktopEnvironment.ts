@@ -5,6 +5,7 @@ import type {
   DesktopRuntimeInfo,
 } from "@t3tools/contracts";
 import { T3CODE_BUILD_FLAVOR, type ConnectBuildFlavor } from "@t3tools/shared/connectBranding";
+import { isStableReleaseVersion } from "@t3tools/shared/semver";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -101,12 +102,15 @@ export class DesktopEnvironment extends Context.Service<
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
+  readonly buildFlavor: ConnectBuildFlavor;
 }): DesktopAppStageLabel {
   if (input.isDevelopment) {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  if (input.buildFlavor === "public" && isStableReleaseVersion(input.appVersion)) return "Latest";
+
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Beta";
 }
 
 export function resolveDesktopAppBranding(input: {
@@ -119,7 +123,7 @@ export function resolveDesktopAppBranding(input: {
   return {
     baseName,
     stageLabel,
-    displayName: `${baseName} (${stageLabel})`,
+    displayName: stageLabel === "Latest" ? baseName : `${baseName} (${stageLabel})`,
   };
 }
 

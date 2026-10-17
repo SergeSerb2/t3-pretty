@@ -106,7 +106,8 @@ test -n "$version"
 echo "Building Linux x64 AppImage $version"
 
 export DEBIAN_FRONTEND=noninteractive
-if command -v sudo >/dev/null && command -v apt-get >/dev/null; then
+if [[ "${T3CODE_LINUX_DEPS_PREINSTALLED:-0}" != "1" ]] &&
+  command -v sudo >/dev/null && command -v apt-get >/dev/null; then
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends \
     python3 make g++ gcc file imagemagick xz-utils ca-certificates \
@@ -175,13 +176,15 @@ fi
 
 appimage="$(find "$publish" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 test -n "$appimage"
-file "$appimage" | tee /dev/stderr | grep -Eq 'x86[-_]64'
+description="$(file "$appimage")"
+printf '%s\n' "$description" >&2
+printf '%s\n' "$description" | grep -Eq 'x86[-_]64'
 test -f "$publish/nightly-linux.yml" || test -f "$publish/latest-linux.yml"
 # Unversioned name for the README download link; the versioned file stays
 # canonical for electron-updater via latest-linux.yml.
 cp "$appimage" "$publish/T3-Code-x64.AppImage"
 
-if command -v buildkite-agent >/dev/null; then
+if [[ -n "${BUILDKITE_JOB_ID:-}" ]] && command -v buildkite-agent >/dev/null; then
   (cd "$publish" && buildkite-agent artifact upload '*')
 fi
 

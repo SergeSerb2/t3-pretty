@@ -11,8 +11,8 @@
  * first render of the next launch. An unwritten flag means "not known yet" and
  * loads the provider: an install that was already signed in when this landed
  * must not silently lose its relay session, so the answer is paid for once and
- * recorded. Browsers are unaffected — there the provider loads clerk-js from
- * Clerk's CDN, not from our bundle.
+ * recorded. Supported browsers load clerk-js from Clerk's CDN. Other browser
+ * origins hand public T3 Connect sign-in to the official hosted app.
  *
  * Opening the gate mid-session mounts a provider above the app, which remounts
  * the tree once. That is deliberate: the alternative is paying the parse on
@@ -21,6 +21,7 @@
 import { useSyncExternalStore } from "react";
 
 import { isElectron } from "../env";
+import { connectBrowserAuthHandoffUrl } from "./browserAuth";
 import { hasCloudPublicConfig } from "./publicConfig";
 
 export const CLERK_GATE_STORAGE_KEY = "t3code:desktop-clerk-enabled:v1";
@@ -36,8 +37,8 @@ function readStoredFlag(): boolean {
   }
 }
 
-// Browsers always render the provider; only the desktop bundle pays for it.
-let open = !isElectron || readStoredFlag();
+// Unsupported browser origins use the official hosted app without mounting Clerk.
+let open = connectBrowserAuthHandoffUrl() === null && (!isElectron || readStoredFlag());
 let signInRequested = false;
 
 function writeStoredFlag(next: boolean): void {
@@ -72,6 +73,11 @@ export function subscribeToClerkGate(listener: () => void): () => void {
  * click.
  */
 export function openClerkGate(options?: { readonly promptSignIn?: boolean }): void {
+  const handoffUrl = connectBrowserAuthHandoffUrl();
+  if (handoffUrl !== null) {
+    if (options?.promptSignIn) window.open(handoffUrl, "_blank", "noopener,noreferrer");
+    return;
+  }
   if (options?.promptSignIn) signInRequested = true;
   writeStoredFlag(true);
   setOpen(true);
@@ -90,7 +96,7 @@ export function consumeClerkSignInRequest(): boolean {
   return requested;
 }
 
-/** True once the Clerk provider is mounted (always true outside Electron). */
+/** True once the Clerk provider is mounted on a supported client. */
 export function useClerkGateOpen(): boolean {
   return useSyncExternalStore(subscribeToClerkGate, isClerkGateOpen, isClerkGateOpen);
 }
