@@ -26,6 +26,66 @@ export interface ChangelogRelease {
 
 export const CHANGELOG_RELEASES: readonly ChangelogRelease[] = [
   {
+    version: "0.0.46-nightly.20261015.3176050004",
+    date: "2026-10-17",
+    items: [
+      {
+        kind: "improved",
+        title: "Remove obsolete Agents page and policy",
+      },
+      {
+        kind: "new",
+        title: "Route new threads by weekly Agent Perf scores",
+      },
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+    ],
+  },
+  {
+    version: "0.0.46-nightly.20261015.3176050003",
+    date: "2026-10-17",
+    items: [
+      {
+        kind: "improved",
+        title: "Remove obsolete Agents page and policy",
+      },
+      {
+        kind: "new",
+        title: "Route new threads by weekly Agent Perf scores",
+      },
+      {
+        kind: "new",
+        title: "Update provider CLIs automatically on every machine",
+      },
+      {
+        kind: "fixed",
+        title: "Sync scenery adjustments across devices",
+      },
+      {
+        kind: "fixed",
+        title: "Rail update capsule no longer clips its download ring",
+      },
+      {
+        kind: "fixed",
+        title: "Reclaim page space when the sidebar collapses",
+      },
+    ],
+  },
+  {
     version: "0.0.46-nightly.20261015.3176050002",
     date: "2026-10-17",
     items: [

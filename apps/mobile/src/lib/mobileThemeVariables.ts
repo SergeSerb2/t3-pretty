@@ -1,6 +1,7 @@
 import defaultThemeVariables from "../../generated-uniwind-default-theme-variables.json";
 import {
   DEFAULT_MOBILE_THEME_ID,
+  flattenThemeColor,
   getMobileThemeVariables,
   themeColorWithAlpha,
   type MobileThemeAppearance,
@@ -29,10 +30,11 @@ export function getMobileThemeRuntimeVariables(
   // Android's frame surrounds the sidebar and chat panes. Light iPad sidebars
   // reuse that stronger tonal fill; dark sidebars retain the shared black pane
   // beneath the near-black chat canvas. System colors replace these roles later.
-  const frame = themeColorWithAlpha(
-    variables[usesDefaultPalette ? "--color-row-hover" : "--color-drawer"],
-    1,
-  );
+  // The default hover is a translucent accent. Resolve it over the screen so
+  // an opaque frame keeps that tint instead of becoming the solid accent.
+  const frame = usesDefaultPalette
+    ? flattenThemeColor(variables["--color-row-hover"], variables["--color-screen"])
+    : themeColorWithAlpha(variables["--color-drawer"], 1);
   if (platform === "ios" && usesDefaultPalette && appearance === "light") {
     return {
       ...variables,

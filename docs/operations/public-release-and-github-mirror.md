@@ -78,8 +78,21 @@ runtime inputs for Windows. See [fork release operations](fork-release.md) for t
 platform signing and native-runtime prerequisites. Do not substitute unsigned assets
 for a release that requires signatures.
 
-The Linux AppImage build also emits a Debian package. Keep both files with
-`latest-linux.yml`; Debian installations download the `.deb` named in that manifest.
+Build the Linux AppImage and Debian package separately, using distinct output
+directories so one build does not overwrite the other build's updater manifest:
+
+```sh
+vp run dist:desktop:artifact --platform linux --target AppImage --arch x64 \
+  --build-version "$VERSION" --output-dir "${ARTIFACTS}-appimage" --verbose
+vp run dist:desktop:artifact --platform linux --target deb --arch x64 \
+  --build-version "$VERSION" --output-dir "${ARTIFACTS}-deb" --verbose
+```
+
+Keep both installers. Publish one `latest-linux.yml` whose `files` entries include
+both installers, with each file's final SHA-512 and size. Preserve the AppImage's
+`path`, `sha512`, and `blockMapSize` metadata. Verify the combined manifest against
+the final files before publication. Debian installations download the `.deb` named
+in that manifest.
 The public Debian package is `t3pretty`, with the `t3pretty.desktop` launcher.
 The internal Debian package remains `t3code`.
 
