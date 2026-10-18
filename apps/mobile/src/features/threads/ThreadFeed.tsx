@@ -2651,12 +2651,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   }, [contentWidth, hasHtmlRenders, props.listRef]);
 
   // Disclosures can mount existing offscreen rows as well as new work rows.
-  // Fade those in after movement; never retain removed rows over replacements.
+  // Fade those in after movement on iOS. Android entering animations can retain
+  // a stale native row position over the next message in the virtualized list.
   const renderItem = useCallback(
     (info: { item: PendingThreadFeedEntry; index: number }) => (
       <Animated.View
         key={info.item.id}
-        entering={disclosureToggleSettling ? THREAD_FEED_DISCLOSURE_ENTER_TRANSITION : undefined}
+        entering={
+          Platform.OS !== "android" && disclosureToggleSettling
+            ? THREAD_FEED_DISCLOSURE_ENTER_TRANSITION
+            : undefined
+        }
       >
         <MessageImageGalleryScope
           entry={info.item}
